@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://empathia.local/contracts/intelligence/v1/infer-turn.response.schema.json",
+  "title": "InferTurnResponse",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request_id",
+    "transcript",
+    "emotion",
+    "risk_signals",
+    "reply",
+    "tts",
+    "timing",
+    "memory",
+    "model_versions",
+    "metrics"
+  ],
+  "properties": {
+    "request_id": { "type": "string", "format": "uuid" },
+    "transcript": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "emotion": {
+      "type": "object",
+      "required": ["label", "confidence"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "enum": ["neutral", "joy", "sadness", "anger", "fear", "anxiety"]
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "risk_signals": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "severity", "evidence", "confidence"],
+        "properties": {
+          "code": { "type": "string" },
+          "severity": { "type": "string", "enum": ["low", "medium", "high"] },
+          "evidence": { "type": "string", "minLength": 1 },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "reply": {
+      "type": "object",
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1 },
+        "guardrail_flags": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "tts": {
+      "type": "object",
+      "required": ["path", "format", "duration_ms"],
+      "properties": {
+        "path": { "type": "string" },
+        "format": { "type": "string", "enum": ["wav"] },
+        "duration_ms": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "required": ["quality", "cues"],
+      "properties": {
+        "quality": { "type": "string", "enum": ["high", "low"] },
+        "cues": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["t_ms", "viseme"],
+            "properties": {
+              "t_ms": { "type": "integer", "minimum": 0 },
+              "viseme": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "required": ["updated"],
+      "properties": {
+        "updated": { "type": "boolean" }
+      }
+    },
+    "model_versions": {
+      "type": "object",
+      "properties": {
+        "stt": { "type": "string" },
+        "llm": { "type": "string" },
+        "tts": { "type": "string" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "required": ["total_ms"],
+      "properties": {
+        "stt_ms": { "type": "integer" },
+        "analysis_ms": { "type": "integer" },
+        "llm_ms": { "type": "integer" },
+        "tts_ms": { "type": "integer" },
+        "total_ms": { "type": "integer" }
+      }
+    }
+  }
+}

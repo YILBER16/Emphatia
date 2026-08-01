@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "turn_id": "00000000-0000-4000-8000-000000000001",
+  "duration_ms": 2400,
+  "timing_quality": "low",
+  "emotion_drive": {
+    "label": "sadness",
+    "intensity": 0.45
+  },
+  "lips": [
+    { "t_ms": 0, "viseme": "sil", "weight": 1.0 },
+    { "t_ms": 120, "viseme": "aa", "weight": 0.8 },
+    { "t_ms": 320, "viseme": "E", "weight": 0.7 },
+    { "t_ms": 520, "viseme": "PP", "weight": 0.9 },
+    { "t_ms": 720, "viseme": "aa", "weight": 0.75 },
+    { "t_ms": 1000, "viseme": "I", "weight": 0.7 },
+    { "t_ms": 1300, "viseme": "O", "weight": 0.65 },
+    { "t_ms": 1700, "viseme": "U", "weight": 0.6 },
+    { "t_ms": 2100, "viseme": "sil", "weight": 1.0 }
+  ],
+  "face": [
+    { "t_ms": 0, "gesture": "warm_attention", "weight": 0.5 },
+    { "t_ms": 400, "gesture": "soft_concern", "weight": 0.55 },
+    { "t_ms": 1800, "gesture": "calm", "weight": 0.4 }
+  ]
+}

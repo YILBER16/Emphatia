@@ -1,0 +1,58 @@
+{
+  "version": "v0",
+  "status": "provisional_lab",
+  "note": "Requiere sign-off de orientador antes de piloto institucional formal.",
+  "severities": ["low", "medium", "high"],
+  "codes": [
+    {
+      "code": "SELF_HARM_IDEATION",
+      "title": "Ideación de autolesión",
+      "default_severity_hint": "high"
+    },
+    {
+      "code": "SELF_HARM_BEHAVIOR",
+      "title": "Conducta de autolesión",
+      "default_severity_hint": "high"
+    },
+    {
+      "code": "HARM_TO_OTHERS",
+      "title": "Daño a terceros",
+      "default_severity_hint": "high"
+    },
+    {
+      "code": "ABUSE_DISCLOSURE",
+      "title": "Revelación de abuso/violencia",
+      "default_severity_hint": "high"
+    },
+    {
+      "code": "HOPELESSNESS",
+      "title": "Desesperanza intensa",
+      "default_severity_hint": "medium"
+    },
+    {
+      "code": "SEVERE_WITHDRAWAL",
+      "title": "Aislamiento severo",
+      "default_severity_hint": "medium"
+    },
+    {
+      "code": "BULLYING_VICTIM",
+      "title": "Víctima de acoso",
+      "default_severity_hint": "medium"
+    },
+    {
+      "code": "BULLYING_PERPETRATION",
+      "title": "Participación en acoso",
+      "default_severity_hint": "medium"
+    },
+    {
+      "code": "ACUTE_DISTRESS",
+      "title": "Malestar agudo no especificado",
+      "default_severity_hint": "medium"
+    },
+    {
+      "code": "OTHER",
+      "title": "Otra señal",
+      "default_severity_hint": "low"
+    }
+  ]
+}

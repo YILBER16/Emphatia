@@ -1,0 +1,9 @@
+# CODEOWNERS — dueños de carpeta (poner usuarios reales de GitHub después)
+
+/contratos/ @empathia-b @empathia-c @empathia-a @empathia-d
+/servidor/ @empathia-b
+/backend/ @empathia-b
+/inteligencia/ @empathia-c
+/cliente-unity/ @empathia-a
+/expresion/ @empathia-d
+/documentacion/ @empathia-b @empathia-c @empathia-a @empathia-d

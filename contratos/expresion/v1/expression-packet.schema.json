@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://empathia.local/contracts/expression/v1/expression-packet.schema.json",
+  "title": "ExpressionPacket",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "turn_id", "duration_ms", "timing_quality", "emotion_drive", "lips", "face"],
+  "properties": {
+    "version": { "type": "integer", "const": 1 },
+    "turn_id": { "type": "string", "format": "uuid" },
+    "duration_ms": { "type": "integer", "minimum": 1 },
+    "timing_quality": { "type": "string", "enum": ["high", "low"] },
+    "emotion_drive": {
+      "type": "object",
+      "required": ["label", "intensity"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "enum": ["neutral", "joy", "sadness", "anger", "fear", "anxiety"]
+        },
+        "intensity": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "lips": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["t_ms", "viseme", "weight"],
+        "properties": {
+          "t_ms": { "type": "integer", "minimum": 0 },
+          "viseme": {
+            "type": "string",
+            "enum": ["sil", "PP", "FF", "TH", "DD", "kk", "CH", "SS", "nn", "RR", "aa", "E", "I", "O", "U"]
+          },
+          "weight": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "face": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["t_ms", "gesture", "weight"],
+        "properties": {
+          "t_ms": { "type": "integer", "minimum": 0 },
+          "gesture": {
+            "type": "string",
+            "enum": ["neutral", "soft_smile", "soft_concern", "warm_attention", "calm"]
+          },
+          "weight": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    }
+  }
+}

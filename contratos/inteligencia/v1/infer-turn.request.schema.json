@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://empathia.local/contracts/intelligence/v1/infer-turn.request.schema.json",
+  "title": "InferTurnRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request_id", "session_id", "turn_id", "student_id", "locale", "audio"],
+  "properties": {
+    "request_id": { "type": "string", "format": "uuid" },
+    "session_id": { "type": "string", "format": "uuid" },
+    "turn_id": { "type": "string", "format": "uuid" },
+    "student_id": { "type": "string", "format": "uuid" },
+    "locale": { "type": "string", "const": "es" },
+    "audio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 }
+      }
+    },
+    "options": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "return_partials": { "type": "boolean", "default": false },
+        "max_latency_ms": { "type": "integer", "minimum": 1000 }
+      }
+    }
+  }
+}

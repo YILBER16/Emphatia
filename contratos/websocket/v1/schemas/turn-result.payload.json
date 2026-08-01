@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://empathia.local/contracts/ws/v1/schemas/turn-result.payload.json",
+  "title": "TurnResultPayload",
+  "type": "object",
+  "required": [
+    "turn_id",
+    "sequence_no",
+    "transcript",
+    "emotion",
+    "reply_text",
+    "tts",
+    "expression",
+    "risk_emitted",
+    "metrics"
+  ],
+  "properties": {
+    "turn_id": { "type": "string", "format": "uuid" },
+    "sequence_no": { "type": "integer", "minimum": 1 },
+    "transcript": { "type": "string" },
+    "emotion": {
+      "type": "object",
+      "required": ["label", "confidence"],
+      "properties": {
+        "label": { "type": "string" },
+        "confidence": { "type": "number" }
+      }
+    },
+    "reply_text": { "type": "string" },
+    "tts": {
+      "type": "object",
+      "required": ["format", "url"],
+      "properties": {
+        "format": { "type": "string", "enum": ["wav"] },
+        "url": { "type": "string", "format": "uri" }
+      }
+    },
+    "expression": { "type": "object" },
+    "risk_emitted": { "type": "boolean" },
+    "metrics": {
+      "type": "object",
+      "required": ["total_ms"],
+      "properties": {
+        "total_ms": { "type": "integer" }
+      }
+    }
+  }
+}

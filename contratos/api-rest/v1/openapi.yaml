@@ -1,0 +1,170 @@
+openapi: 3.0.3
+info:
+  title: EmpathIA Backend API
+  version: 1.0.0
+  description: |
+    REST contract v1 for module B (Laravel).
+    Base URL piloto: http://127.0.0.1:8000/api/v1
+servers:
+  - url: http://127.0.0.1:8000/api/v1
+paths:
+  /health:
+    get:
+      summary: Node health
+      responses:
+        "200":
+          description: Health payload
+  /auth/login:
+    post:
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: Token + user
+  /auth/logout:
+    post:
+      summary: Logout
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+  /auth/me:
+    get:
+      summary: Current user
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: User
+  /accompaniment/sessions:
+    post:
+      summary: Create accompaniment session
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                locale: { type: string, enum: [es] }
+                client: { type: string, enum: [unity] }
+      responses:
+        "201":
+          description: Session created
+        "409":
+          description: SESSION_ALREADY_ACTIVE
+    get:
+      summary: List sessions (counselor/admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Session list
+  /accompaniment/sessions/{session_id}:
+    get:
+      summary: Get session
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Session
+  /accompaniment/sessions/{session_id}/close:
+    post:
+      summary: Close session
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Closed
+  /accompaniment/sessions/{session_id}/turns:
+    post:
+      summary: Accept student utterance (multipart audio)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [audio, client_turn_key]
+              properties:
+                audio: { type: string, format: binary }
+                client_turn_key: { type: string, format: uuid }
+                sequence_hint: { type: integer }
+      responses:
+        "202":
+          description: Turn accepted (result via WS/events)
+  /accompaniment/sessions/{session_id}/events:
+    get:
+      summary: Phase-0 event poll (same envelopes as WS v1)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: session_id
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: after
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: Queued events
+  /accompaniment/turns/{turn_id}/audio/tts:
+    get:
+      summary: Download TTS wav for turn
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: turn_id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: audio/wav
+  /risk-signals:
+    get:
+      summary: List risk signals (counselor/admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Risk signal list
+  /risk-catalog:
+    get:
+      summary: Risk catalog v0
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Catalog
+  /students:
+    get:
+      summary: List students (counselor/admin)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Students
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
