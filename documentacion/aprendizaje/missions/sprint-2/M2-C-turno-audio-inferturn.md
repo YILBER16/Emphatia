@@ -1,4 +1,4 @@
-# M2-C — Turno con audio y contrato vivo de InferTurn
+# M2-C — Stub de turno listo para audio real + plan IA
 
 ## ID
 
@@ -6,7 +6,7 @@
 
 ## Título
 
-Preparar el turno con audio y explicar el camino hacia IA real
+Asegurar InferTurn ante audio del piloto y planificar STT→LLM→TTS
 
 ## Rol
 
@@ -14,75 +14,71 @@ C
 
 ## Objetivo
 
-Que el equipo pueda entender, en español simple, cómo funciona el turno de Inteligencia cuando entra audio y qué devuelve el stub; además, dejar preparada la base documental para reemplazarlo por STT, LLM y TTS reales sin cambiar el contrato.
+1) Que el stub (o el pipeline detrás del mismo contrato) responda bien cuando B envía un path de audio real del piloto.  
+2) Dejar escrito el plan por etapas para sustituir stub por STT, LLM y TTS **sin cambiar** el contrato InferTurn.
 
 ## Tiempo estimado
 
-60–120 minutos
+90–150 minutos
 
 ## Competencias que desarrolla
 
-- Lectura de contratos JSON Schema
-- Explicación técnica en lenguaje simple
-- Planificación de pipeline STT -> LLM -> TTS
+- Contrato estable vs implementación  
+- Prueba de integración B↔C  
+- Planificación de deuda técnica controlada  
 
 ## Conocimientos previos
 
-- Sprint 1 C completado o al menos arrancado
-- Ojeada a `contratos/inteligencia/v1/`
-- Lectura de `documentacion/equipo/guia-rol-C-inteligencia.md`
-- Lectura de `documentacion/equipo/clase-de-manana.md`
+- Sprint 1 C (`PRUEBA_STUB`, APRENDIZAJE InferTurn)  
+- Entender que solo B llama a C  
 
 ## Entregables
 
-Lista concreta de archivos, capturas o evidencias:
-
-1. `inteligencia/APRENDIZAJE.md` con sección **Contrato del turno** y ejemplo corto del flujo
-2. `inteligencia/PRUEBA_STUB.md` o nota equivalente con pasos de health / infer-turn
-3. Demostración verbal del stub vivo al equipo
-4. Recordatorio escrito: C no escribe la DB de B; solo B llama a C
+1. Stub arrancable; prueba documentada con B (o curl interno) usando un WAV en `datos/`  
+2. Actualizar `inteligencia/PRUEBA_STUB.md` con caso “audio real del piloto”  
+3. Sección en APRENDIZAJE: **Plan Sprint 3+** (STT → análisis → LLM → TTS) con checklist de aceptación futura  
+4. Confirmar que `expression`/`timing` salen útiles para D/A (quality high|low)  
+5. (Opcional spike) Anotar resultado de probar Whisper **sin** marcarlo como Done del sprint  
 
 ## Criterios de aceptación
 
-Checklist binario (sí/no). Si uno falla, la misión no está hecha.
+- [ ] Health del stub OK  
+- [ ] InferTurn documentado entra/sale (refresco)  
+- [ ] Prueba conjunta con B al menos una vez  
+- [ ] Plan IA real escrito (sin exigir instalación completa)  
+- [ ] No escribes en DB de B  
+- [ ] Checklist Sprint 2 C  
 
-- [ ] Explicas entrada: `session_id`, `turn_id`, `student_id`, `audio.path`, `locale`
-- [ ] Explicas salida: transcript, emotion, risk_signals, reply, tts, timing, metrics
-- [ ] El stub arranca sin traceback
-- [ ] Sabes el header `X-Internal-Token` y su valor de ejemplo en el proyecto
-- [ ] No diste IA real por cerrada en este sprint
+## Cómo validar
 
-## Cómo validar el resultado
-
-Pasos exactos que el estudiante (o el mentor) ejecuta para comprobar:
-
-1. Arranca `python inteligencia/servidor_simulado.py`
-2. Lee en voz alta el contrato del turno en menos de 1 minuto
-3. Muestra `inteligencia/PRUEBA_STUB.md` y ejecuta el health o el paso documentado
+1. `python servidor_simulado.py`  
+2. B hace un turno (o curl interno con token)  
+3. Muestras JSON de respuesta y el plan STT/LLM/TTS  
 
 ## Errores comunes
 
 | Error | Qué hacer |
 |-------|-----------|
-| Copiar el schema sin explicarlo | Traducirlo a español con ejemplo |
-| Llamar al stub desde Unity | Incorrecto: solo B llama a C |
-| Querer IA real ya | Anótalo como siguiente fase; no bloquees el sprint |
+| Cambiar shape JSON “porque es más fácil” | Prohibido — Contract Review |
+| Instalar 3 motores y no documentar | Primero contrato + stub estable |
+| Exponer puerto a LAN | Solo localhost |
 
 ## Qué NO debo hacer
 
-- Cambiar schemas en `contratos/`
-- Escribir en MySQL/SQLite de B
-- Exponer Ollama, Whisper o cualquier servicio fuera de localhost
+- Diagnosticar / medicar en replies  
+- Unity directo  
+- Marcar Ollama como cerrado sin integración con B  
 
-## Referencias técnicas (solo lectura / enlace)
+## Bonus
 
-- Guía de rol: `documentacion/equipo/guia-rol-C-inteligencia.md`
-- Clase 2: `documentacion/equipo/clase-de-manana.md`
-- Contratos: `contratos/inteligencia/v1/`
-- Stub: `inteligencia/servidor_simulado.py`
+- Spike Whisper en español con 1 WAV de prueba + métrica de tiempo en APRENDIZAJE  
+
+## Referencias
+
+- `contratos/inteligencia/v1/`  
+- `inteligencia/servidor_simulado.py`  
+- Guión clase Sprint 2  
 
 ## Evidencia de cierre
 
-Cómo lo demuestras en la review (1–2 min):
-
-- Stub vivo + 1 minuto explicando qué entra y qué sale del turno
+Demo B↔C + PRUEBA_STUB actualizado + plan IA.
