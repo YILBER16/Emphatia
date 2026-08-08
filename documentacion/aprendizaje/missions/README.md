@@ -27,4 +27,4 @@ Usar siempre: [_PLANTILLA_MISION.md](./_PLANTILLA_MISION.md)
 |--------|---------|---------|
 | 0 | [sprint-0/](./sprint-0/) | Solo entorno / “enciende” |
 | 1 | [sprint-1/](./sprint-1/) | Conectar: login, API docs, InferTurn stub, morphs |
-| 2+ | (próximos) | Turno con audio, expresión runtime, IA real |
+| 2 | [sprint-2/](./sprint-2/) | Turno con audio, contrato vivo, base STT/LLM/TTS |

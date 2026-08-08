@@ -81,3 +81,34 @@ Checklist de evidencia minima:
 2. Health responde `status: ok`.
 3. Contratos de `contratos/inteligencia/v1/` revisados sin modificarlos.
 4. APRENDIZAJE explicado en menos de 1 minuto.
+
+## 6) Contrato del turno (InferTurn)
+
+En Sprint 1 y Sprint 2 el foco no es IA real todavia: es explicar y demostrar el contrato que usa el turno con audio.
+
+### Entrada
+
+- `session_id`
+- `turn_id`
+- `student_id`
+- `locale` con valor `es`
+- `audio.path` apuntando a un WAV local o generado por el flujo de B
+
+### Salida
+
+- `transcript`
+- `emotion`
+- `risk_signals`
+- `reply`
+- `tts`
+- `timing`
+- `memory`
+- `model_versions`
+- `metrics`
+
+### Regla de trabajo
+
+- C no escribe en la DB de B.
+- B llama a C por API interna.
+- El header interno es `X-Internal-Token`.
+- Si aun no hay motor real, se documenta el stub y se mantiene el mismo contrato.
