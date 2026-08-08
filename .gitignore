@@ -47,7 +47,14 @@ inteligencia/__pycache__/
 inteligencia/**/__pycache__/
 inteligencia/*.pyc
 
-# Unity
+# Unity (proyecto en cliente-unity/ o subcarpeta, p. ej. avatar/)
+cliente-unity/**/[Ll]ibrary/
+cliente-unity/**/[Tt]emp/
+cliente-unity/**/[Oo]bj/
+cliente-unity/**/[Bb]uild/
+cliente-unity/**/[Bb]uilds/
+cliente-unity/**/[Ll]ogs/
+cliente-unity/**/[Uu]ser[Ss]ettings/
 cliente-unity/[Ll]ibrary/
 cliente-unity/[Tt]emp/
 cliente-unity/[Oo]bj/
@@ -55,11 +62,15 @@ cliente-unity/[Bb]uild/
 cliente-unity/[Bb]uilds/
 cliente-unity/[Ll]ogs/
 cliente-unity/[Uu]ser[Ss]ettings/
+cliente-unity/**/*.csproj
+cliente-unity/**/*.sln
 cliente-unity/*.csproj
 cliente-unity/*.sln
 cliente-unity/*.userprefs
 cliente-unity/*.pidb
 cliente-unity/*.unityproj
+# Paquete de tutoriales Unity Learn (muy pesado; no es código EmpathIA)
+cliente-unity/**/_Unity Essentials/
 
 # Herramientas
 herramientas/.cache/
