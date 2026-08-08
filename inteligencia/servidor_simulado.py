@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -22,6 +23,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_ROOT = Path(os.environ.get("EMPATHIA_DATA_ROOT", str(REPO_ROOT / "datos")))
 FIXTURE_EXPRESSION = REPO_ROOT / "expresion" / "fixtures" / "paquete-expresion-ejemplo.json"
 SILENT_WAV = Path(__file__).resolve().parent / "fixtures" / "silent.wav"
+STUB_TRANSCRIPT_TEXT = "Hola, hoy me siento un poco cansado pero quiero hablar."
+_WHISPER_MODEL = None
+_WHISPER_MODEL_CONFIG = None
 
 
 def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict) -> None:
@@ -43,12 +47,82 @@ def authorized(handler: BaseHTTPRequestHandler) -> bool:
     return handler.headers.get("X-Internal-Token") == INTERNAL_TOKEN
 
 
+def _get_whisper_model():
+    global _WHISPER_MODEL, _WHISPER_MODEL_CONFIG
+
+    model_name = os.environ.get("INTEL_WHISPER_MODEL", "small")
+    device = os.environ.get("INTEL_WHISPER_DEVICE", "cpu")
+    compute_type = os.environ.get("INTEL_WHISPER_COMPUTE_TYPE", "int8")
+    config = (model_name, device, compute_type)
+
+    if _WHISPER_MODEL is not None and _WHISPER_MODEL_CONFIG == config:
+        return _WHISPER_MODEL, model_name
+
+    from faster_whisper import WhisperModel
+
+    _WHISPER_MODEL = WhisperModel(model_name, device=device, compute_type=compute_type)
+    _WHISPER_MODEL_CONFIG = config
+    return _WHISPER_MODEL, model_name
+
+
+def infer_transcript(audio_path: str | None) -> tuple[dict, str, int]:
+    started = time.perf_counter()
+
+    fallback = {
+        "text": STUB_TRANSCRIPT_TEXT,
+        "confidence": 0.91,
+    }
+    if not audio_path:
+        return fallback, "stub-whisper", 50
+
+    audio_file = Path(audio_path)
+    if not audio_file.exists():
+        print(f"[intelligence-stub] audio not found for whisper: {audio_file}", flush=True)
+        return fallback, "stub-whisper", 50
+
+    try:
+        model, model_name = _get_whisper_model()
+        segments, info = model.transcribe(str(audio_file), language="es")
+        text = " ".join(segment.text.strip() for segment in segments if segment.text).strip()
+        if not text:
+            text = STUB_TRANSCRIPT_TEXT
+
+        elapsed_ms = max(1, int((time.perf_counter() - started) * 1000))
+        confidence = float(getattr(info, "language_probability", 0.8))
+        confidence = max(0.0, min(1.0, confidence))
+
+        return {
+            "text": text,
+            "confidence": confidence,
+        }, f"faster-whisper:{model_name}", elapsed_ms
+    except Exception as exc:
+        print(f"[intelligence-stub] whisper fallback: {exc}", flush=True)
+        return fallback, "stub-whisper", 50
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args) -> None:
         print(f"[intelligence-stub] {self.address_string()} {fmt % args}")
 
     def do_GET(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
+        if path == "/":
+            json_response(
+                self,
+                200,
+                {
+                    "status": "ok",
+                    "service": "intelligence-stub",
+                    "message": "Stub activo. Usa GET /internal/v1/health para health.",
+                    "endpoints": [
+                        "/internal/v1/health",
+                        "/internal/v1/infer/turn",
+                        "/internal/v1/memory/prepare",
+                        "/internal/v1/memory/purge",
+                    ],
+                },
+            )
+            return
         if path == "/internal/v1/health":
             json_response(
                 self,
@@ -90,6 +164,7 @@ class Handler(BaseHTTPRequestHandler):
             body = read_json(self)
             turn_id = body.get("turn_id") or str(uuid.uuid4())
             request_id = body.get("request_id") or str(uuid.uuid4())
+            audio_path = (body.get("audio") or {}).get("path") if isinstance(body.get("audio"), dict) else None
 
             out_dir = DATA_ROOT / "audio" / "output" / str(body.get("session_id", "session"))
             out_dir.mkdir(parents=True, exist_ok=True)
@@ -110,12 +185,15 @@ class Handler(BaseHTTPRequestHandler):
                 for lip in expression.get("lips", [])
             ]
 
+            transcript, stt_version, stt_ms = infer_transcript(audio_path)
+            analysis_ms = 20
+            llm_ms = 80
+            tts_ms = 40
+            total_ms = stt_ms + analysis_ms + llm_ms + tts_ms
+
             payload = {
                 "request_id": request_id,
-                "transcript": {
-                    "text": "Hola, hoy me siento un poco cansado pero quiero hablar.",
-                    "confidence": 0.91,
-                },
+                "transcript": transcript,
                 "emotion": {"label": "sadness", "confidence": 0.62},
                 "risk_signals": [],
                 "reply": {
@@ -134,16 +212,16 @@ class Handler(BaseHTTPRequestHandler):
                 "expression": expression,
                 "memory": {"updated": True},
                 "model_versions": {
-                    "stt": "stub-whisper",
+                    "stt": stt_version,
                     "llm": "stub-ollama",
                     "tts": "stub-kokoro",
                 },
                 "metrics": {
-                    "stt_ms": 50,
-                    "analysis_ms": 20,
-                    "llm_ms": 80,
-                    "tts_ms": 40,
-                    "total_ms": 190,
+                    "stt_ms": stt_ms,
+                    "analysis_ms": analysis_ms,
+                    "llm_ms": llm_ms,
+                    "tts_ms": tts_ms,
+                    "total_ms": total_ms,
                 },
             }
             json_response(self, 200, payload)
@@ -193,7 +271,12 @@ def main() -> None:
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"EmpathIA intelligence stub on http://{HOST}:{PORT}", flush=True)
     print(f"DATA_ROOT={DATA_ROOT}", flush=True)
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("Stopping intelligence stub...", flush=True)
+    finally:
+        server.server_close()
 
 
 if __name__ == "__main__":
