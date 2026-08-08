@@ -10,8 +10,9 @@ La documentación de esta carpeta (`equipo/`) es **técnica / mentor**. No la re
 |-----------|------------|
 | [camino-simple.md](./camino-simple.md) | Principiantes / vibe coding (mentor) |
 | [sesion-1-manana.md](./sesion-1-manana.md) | Mentor — guion de la primera reunión |
-| [clase-de-hoy.md](./clase-de-hoy.md) | **Hoy** — 3h30 con instalación + misión 1 |
-| [clase-de-manana.md](./clase-de-manana.md) | **Mañana / bonus** — puentes entre roles + misión 2 |
+| [clase-de-hoy.md](./clase-de-hoy.md) | Clase 1 — instalación + Sprint 0 |
+| [clase-2.md](./clase-2.md) | **Clase 2** — Sprint 1 / conectar EmpathIA |
+| [clase-de-manana.md](./clase-de-manana.md) | Borrador previo (usar `clase-2.md`) |
 | [inicio.md](./inicio.md) | Todos — día 0 |
 | [roles.md](./roles.md) | Todos — límites de cada rol (técnico) |
 | [colaboracion.md](./colaboracion.md) | Todos — Git y reglas |

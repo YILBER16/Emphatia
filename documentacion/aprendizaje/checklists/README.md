@@ -5,6 +5,7 @@ Antes de decir “terminé” o abrir un Pull Request, usa la checklist del spri
 | Sprint | Carpeta |
 |--------|---------|
 | 0 | [sprint-0/](./sprint-0/) |
+| 1 | [sprint-1/](./sprint-1/) |
 
 ## Cómo usarla
 

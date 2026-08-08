@@ -26,4 +26,5 @@ Usar siempre: [_PLANTILLA_MISION.md](./_PLANTILLA_MISION.md)
 | Sprint | Carpeta | Enfoque |
 |--------|---------|---------|
 | 0 | [sprint-0/](./sprint-0/) | Solo entorno / “enciende” |
-| 1+ | (se crearán después) | Funcionalidad bajo contratos existentes |
+| 1 | [sprint-1/](./sprint-1/) | Conectar: login, API docs, InferTurn stub, morphs |
+| 2+ | (próximos) | Turno con audio, expresión runtime, IA real |

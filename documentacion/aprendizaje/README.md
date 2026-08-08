@@ -11,8 +11,9 @@ Esta carpeta no reemplaza la documentación técnica: te guía para trabajar com
 | 2 | [ROLE_OVERVIEW.md](./ROLE_OVERVIEW.md) | Ver tu rol y límites en 1 página |
 | 3 | [STUDENT_HANDBOOK.md](./STUDENT_HANDBOOK.md) | Manual del día a día |
 | 4 | [METODOLOGIA_EQUIPO.md](./METODOLOGIA_EQUIPO.md) | Cómo funciona la “mini-empresa” |
-| 5 | [missions/sprint-0/](./missions/sprint-0/) | Tu primera misión (solo entorno) |
-| 6 | [checklists/sprint-0/](./checklists/sprint-0/) | Validar antes de decir “terminé” |
+| 5 | [missions/sprint-0/](./missions/sprint-0/) | Primera misión (solo entorno) |
+| 6 | [missions/sprint-1/](./missions/sprint-1/) | Segunda: conectar piezas EmpathIA |
+| 7 | [checklists/](./checklists/) | Validar antes de decir “terminé” |
 
 ## Mapa de capas del proyecto
 
