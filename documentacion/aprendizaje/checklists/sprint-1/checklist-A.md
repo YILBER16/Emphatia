@@ -11,3 +11,5 @@ Misión: [M1-A](../../missions/sprint-1/M1-A-login-sesion.md)
 - [ ] Probé con B (piloto u otro PC)  
 
 **Fecha:** ________ **Nombre:** ________
+
+> Código listo en `cliente-unity/avatar/Assets/Scripts/Empathia/`. Marca en verde tras probar con B arriba.
