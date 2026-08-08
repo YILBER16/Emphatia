@@ -1,16 +1,10 @@
 using System.Collections;
 using UnityEngine;
-using UnityEngine.EventSystems;
-using UnityEngine.UI;
-#if ENABLE_INPUT_SYSTEM
-using UnityEngine.InputSystem.UI;
-#endif
 
 namespace Empathia
 {
     /// <summary>
-    /// Pantalla A: login → sesión → turno (WAV/mic) → events → reply + TTS.
-    /// Se monta sola al cargar la escena.
+    /// Login A con OnGUI (siempre visible en Play) + flujo sesión/turno.
     /// </summary>
     public class LoginScreenController : MonoBehaviour
     {
@@ -31,33 +25,23 @@ namespace Empathia
 
         EmpathiaApiClient _api;
         AudioSource _audio;
-        InputField _baseUrl;
-        InputField _user;
-        InputField _pass;
-        Text _status;
-        Text _stateLabel;
-        Text _replyLabel;
-        Button _loginBtn;
-        Button _sessionBtn;
-        Button _closeBtn;
-        Button _turnWavBtn;
-        Button _turnMicBtn;
+
+        string _baseUrl = "http://127.0.0.1:8000/api/v1";
+        string _user = "estudiante1";
+        string _pass = "password";
+        string _status = "Pulsa «Iniciar sesión» para autenticar contra B.";
+        string _uiState = "idle";
+        string _reply = "(sin respuesta aún)";
         bool _busy;
-        bool _uiBuilt;
-        Font _uiFont;
+
+        GUIStyle _titleStyle;
+        GUIStyle _labelStyle;
+        GUIStyle _boxStyle;
+        GUIStyle _buttonStyle;
+        GUIStyle _statusStyle;
+        bool _stylesReady;
 
         void Awake()
-        {
-            EnsureComponents();
-            EnsureEventSystem();
-            BuildUi();
-            SetUiState("idle");
-            SetStatus("Listo para autenticar.\nLab: estudiante1 / password\nSolo B (:8000), nunca :8100.");
-            SetReply("(sin respuesta aún)");
-            Debug.Log("[Empathia] LoginScreenController activo — interfaz de inicio de sesión lista.");
-        }
-
-        void EnsureComponents()
         {
             _api = GetComponent<EmpathiaApiClient>();
             if (_api == null)
@@ -66,278 +50,139 @@ namespace Empathia
             _audio = GetComponent<AudioSource>();
             if (_audio == null)
                 _audio = gameObject.AddComponent<AudioSource>();
+
+            if (!string.IsNullOrEmpty(EmpathiaAuthState.BaseUrl))
+                _baseUrl = EmpathiaAuthState.BaseUrl;
+
+            Debug.Log("[Empathia] LoginScreenController listo. Debes estar en PLAY (▶) para ver el login.");
         }
 
-        Font UiFont()
+        void OnGUI()
         {
-            if (_uiFont != null)
-                return _uiFont;
+            EnsureStyles();
 
-            _uiFont = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            if (_uiFont == null)
-                _uiFont = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            if (_uiFont == null)
-                _uiFont = Font.CreateDynamicFontFromOSFont(new[] { "Segoe UI", "Arial", "Helvetica" }, 16);
-            return _uiFont;
+            // Fondo
+            GUI.color = new Color(0.06f, 0.09f, 0.12f, 1f);
+            GUI.DrawTexture(new Rect(0, 0, Screen.width, Screen.height), Texture2D.whiteTexture);
+            GUI.color = Color.white;
+
+            var w = Mathf.Min(520f, Screen.width - 40f);
+            var h = Mathf.Min(620f, Screen.height - 40f);
+            var x = (Screen.width - w) * 0.5f;
+            var y = (Screen.height - h) * 0.5f;
+            var card = new Rect(x, y, w, h);
+
+            GUI.Box(card, GUIContent.none, _boxStyle);
+
+            GUILayout.BeginArea(new Rect(x + 28, y + 24, w - 56, h - 48));
+
+            GUILayout.Label("EmpathIA", _titleStyle);
+            GUILayout.Label("Inicio de sesión", _labelStyle);
+            GUILayout.Space(6);
+            GUILayout.Label("Prueba de autenticación (solo servidor B :8000)", _statusStyle);
+            GUILayout.Space(14);
+
+            GUILayout.Label("Servidor (Base URL)", _statusStyle);
+            GUI.enabled = !_busy;
+            _baseUrl = GUILayout.TextField(_baseUrl, GUILayout.Height(28));
+
+            GUILayout.Space(8);
+            GUILayout.Label("Usuario", _statusStyle);
+            _user = GUILayout.TextField(_user, GUILayout.Height(28));
+
+            GUILayout.Space(8);
+            GUILayout.Label("Contraseña", _statusStyle);
+            _pass = GUILayout.PasswordField(_pass, '•', GUILayout.Height(28));
+
+            GUILayout.Space(14);
+            if (GUILayout.Button("Iniciar sesión", _buttonStyle, GUILayout.Height(42)))
+                OnLoginClicked();
+
+            GUILayout.Space(10);
+            GUILayout.Label("Estado UI: " + _uiState, _labelStyle);
+            GUILayout.Label(_status, _statusStyle, GUILayout.MinHeight(70));
+
+            GUILayout.Space(8);
+            GUILayout.Label("── Después del login ──", _statusStyle);
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Crear sesión", GUILayout.Height(32)))
+                OnCreateSessionClicked();
+            if (GUILayout.Button("Cerrar sesión", GUILayout.Height(32)))
+                OnCloseSessionClicked();
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Turno WAV prueba", GUILayout.Height(32)))
+                OnTurnWavClicked();
+            if (GUILayout.Button("Turno mic (3s)", GUILayout.Height(32)))
+                OnTurnMicClicked();
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(8);
+            GUILayout.Label("Respuesta: " + _reply, _statusStyle);
+
+            GUI.enabled = true;
+            GUILayout.EndArea();
         }
 
-        void EnsureEventSystem()
+        void EnsureStyles()
         {
-            var existing = FindAnyObjectByType<EventSystem>();
-            if (existing == null)
-            {
-                var es = new GameObject("EventSystem");
-                existing = es.AddComponent<EventSystem>();
-            }
-
-#if ENABLE_INPUT_SYSTEM
-            if (existing.GetComponent<InputSystemUIInputModule>() == null
-                && existing.GetComponent<StandaloneInputModule>() == null)
-            {
-                existing.gameObject.AddComponent<InputSystemUIInputModule>();
-            }
-#else
-            if (existing.GetComponent<StandaloneInputModule>() == null)
-                existing.gameObject.AddComponent<StandaloneInputModule>();
-#endif
-        }
-
-        void BuildUi()
-        {
-            if (_uiBuilt)
+            if (_stylesReady)
                 return;
-            _uiBuilt = true;
 
-            var canvasGo = new GameObject("EmpathiaLoginCanvas");
-            canvasGo.transform.SetParent(transform, false);
-            var canvas = canvasGo.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 500;
-            var scaler = canvasGo.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920, 1080);
-            scaler.matchWidthOrHeight = 0.5f;
-            canvasGo.AddComponent<GraphicRaycaster>();
-
-            // Fondo a pantalla completa
-            var backdrop = new GameObject("Backdrop", typeof(RectTransform), typeof(Image));
-            backdrop.transform.SetParent(canvasGo.transform, false);
-            var bg = backdrop.GetComponent<Image>();
-            bg.color = new Color(0.06f, 0.09f, 0.12f, 1f);
-            bg.raycastTarget = false;
-            var bgRt = backdrop.GetComponent<RectTransform>();
-            bgRt.anchorMin = Vector2.zero;
-            bgRt.anchorMax = Vector2.one;
-            bgRt.offsetMin = Vector2.zero;
-            bgRt.offsetMax = Vector2.zero;
-
-            var panel = CreatePanel(canvasGo.transform);
-
-            // —— Bloque autenticación ——
-            var brand = CreateLabel(panel, "EmpathIA", 34, FontStyle.Bold, 0);
-            brand.alignment = TextAnchor.MiddleCenter;
-            brand.color = new Color(0.55f, 0.82f, 1f, 1f);
-
-            var title = CreateLabel(panel, "Inicio de sesión", 24, FontStyle.Bold, 2);
-            title.alignment = TextAnchor.MiddleCenter;
-
-            var subtitle = CreateLabel(panel, "Prueba de autenticación contra el servidor B", 14, FontStyle.Normal, 8);
-            subtitle.alignment = TextAnchor.MiddleCenter;
-            subtitle.color = new Color(1f, 1f, 1f, 0.65f);
-
-            _baseUrl = CreateInput(panel, "Servidor (Base URL)", EmpathiaAuthState.BaseUrl);
-            _user = CreateInput(panel, "Usuario", "estudiante1");
-            _pass = CreateInput(panel, "Contraseña", "password");
-            _pass.contentType = InputField.ContentType.Password;
-
-            _loginBtn = CreateButton(panel, "Iniciar sesión", OnLoginClicked, primary: true);
-
-            _status = CreateLabel(panel, "Ingresa tus datos y pulsa Iniciar sesión.", 14, FontStyle.Normal, 4);
-            _status.alignment = TextAnchor.UpperLeft;
-            var statusLe = _status.GetComponent<LayoutElement>();
-            statusLe.preferredHeight = 72;
-            statusLe.minHeight = 56;
-
-            // —— Acciones posteriores (sesión / turno) ——
-            var sep = CreateLabel(panel, "── Después del login ──", 13, FontStyle.Italic, 2);
-            sep.alignment = TextAnchor.MiddleCenter;
-            sep.color = new Color(1f, 1f, 1f, 0.45f);
-
-            var row = CreateRow(panel);
-            _sessionBtn = CreateButton(row.transform, "Crear sesión", OnCreateSessionClicked);
-            _closeBtn = CreateButton(row.transform, "Cerrar sesión", OnCloseSessionClicked);
-
-            var row2 = CreateRow(panel);
-            _turnWavBtn = CreateButton(row2.transform, "Turno WAV prueba", OnTurnWavClicked);
-            _turnMicBtn = CreateButton(row2.transform, "Turno micrófono (3s)", OnTurnMicClicked);
-
-            _stateLabel = CreateLabel(panel, "Estado UI: idle", 15, FontStyle.Bold, 2);
-            _replyLabel = CreateLabel(panel, "Respuesta: (sin respuesta aún)", 14, FontStyle.Normal, 0);
-            _replyLabel.color = new Color(0.75f, 0.95f, 0.8f, 1f);
-            var replyLe = _replyLabel.GetComponent<LayoutElement>();
-            replyLe.preferredHeight = 48;
-        }
-
-        Transform CreatePanel(Transform parent)
-        {
-            var go = new GameObject("LoginCard", typeof(RectTransform), typeof(Image), typeof(VerticalLayoutGroup));
-            go.transform.SetParent(parent, false);
-            go.GetComponent<Image>().color = new Color(0.12f, 0.16f, 0.22f, 0.98f);
-
-            var rt = go.GetComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0.5f, 0.5f);
-            rt.anchorMax = new Vector2(0.5f, 0.5f);
-            rt.pivot = new Vector2(0.5f, 0.5f);
-            // Tamaño fijo (evita que ContentSizeFitter deje el panel en 0)
-            rt.sizeDelta = new Vector2(560, 720);
-
-            var layout = go.GetComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(36, 36, 32, 28);
-            layout.spacing = 10;
-            layout.childAlignment = TextAnchor.UpperCenter;
-            layout.childControlHeight = false;
-            layout.childControlWidth = true;
-            layout.childForceExpandHeight = false;
-            layout.childForceExpandWidth = true;
-            return go.transform;
-        }
-
-        Text CreateLabel(Transform parent, string text, int size, FontStyle style, int bottomPad)
-        {
-            var go = new GameObject("Label", typeof(RectTransform), typeof(Text), typeof(LayoutElement));
-            go.transform.SetParent(parent, false);
-            var t = go.GetComponent<Text>();
-            t.text = text;
-            t.font = UiFont();
-            t.fontSize = size;
-            t.fontStyle = style;
-            t.color = Color.white;
-            t.alignment = TextAnchor.MiddleLeft;
-            t.horizontalOverflow = HorizontalWrapMode.Wrap;
-            t.verticalOverflow = VerticalWrapMode.Overflow;
-            go.GetComponent<LayoutElement>().preferredHeight = size + 10 + bottomPad;
-            go.GetComponent<LayoutElement>().minHeight = size + 8;
-            return t;
-        }
-
-        InputField CreateInput(Transform parent, string placeholder, string value)
-        {
-            var wrap = new GameObject(placeholder + "Wrap", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
-            wrap.transform.SetParent(parent, false);
-            var v = wrap.GetComponent<VerticalLayoutGroup>();
-            v.spacing = 2;
-            v.childControlWidth = true;
-            v.childForceExpandWidth = true;
-            wrap.GetComponent<LayoutElement>().preferredHeight = 58;
-
-            CreateLabel(wrap.transform, placeholder, 12, FontStyle.Normal, 0);
-
-            var go = new GameObject(placeholder, typeof(RectTransform), typeof(Image), typeof(InputField), typeof(LayoutElement));
-            go.transform.SetParent(wrap.transform, false);
-            go.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.12f);
-            go.GetComponent<LayoutElement>().preferredHeight = 30;
-
-            var textGo = new GameObject("Text", typeof(RectTransform), typeof(Text));
-            textGo.transform.SetParent(go.transform, false);
-            var text = textGo.GetComponent<Text>();
-            text.font = UiFont();
-            text.fontSize = 15;
-            text.color = Color.white;
-            text.supportRichText = false;
-            var textRt = text.GetComponent<RectTransform>();
-            textRt.anchorMin = Vector2.zero;
-            textRt.anchorMax = Vector2.one;
-            textRt.offsetMin = new Vector2(10, 4);
-            textRt.offsetMax = new Vector2(-10, -4);
-
-            var phGo = new GameObject("Placeholder", typeof(RectTransform), typeof(Text));
-            phGo.transform.SetParent(go.transform, false);
-            var ph = phGo.GetComponent<Text>();
-            ph.font = text.font;
-            ph.fontSize = 15;
-            ph.fontStyle = FontStyle.Italic;
-            ph.color = new Color(1f, 1f, 1f, 0.35f);
-            ph.text = placeholder;
-            var phRt = ph.GetComponent<RectTransform>();
-            phRt.anchorMin = Vector2.zero;
-            phRt.anchorMax = Vector2.one;
-            phRt.offsetMin = new Vector2(10, 4);
-            phRt.offsetMax = new Vector2(-10, -4);
-
-            var input = go.GetComponent<InputField>();
-            input.textComponent = text;
-            input.placeholder = ph;
-            input.text = value;
-            return input;
-        }
-
-        GameObject CreateRow(Transform parent)
-        {
-            var go = new GameObject("Buttons", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
-            go.transform.SetParent(parent, false);
-            var h = go.GetComponent<HorizontalLayoutGroup>();
-            h.spacing = 10;
-            h.childAlignment = TextAnchor.MiddleCenter;
-            h.childForceExpandWidth = true;
-            h.childForceExpandHeight = true;
-            go.GetComponent<LayoutElement>().preferredHeight = 40;
-            return go;
-        }
-
-        Button CreateButton(Transform parent, string label, UnityEngine.Events.UnityAction onClick, bool primary = false)
-        {
-            var go = new GameObject(label, typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
-            go.transform.SetParent(parent, false);
-            go.GetComponent<Image>().color = primary
-                ? new Color(0.15f, 0.62f, 0.45f, 1f)
-                : new Color(0.22f, 0.48f, 0.78f, 1f);
-            var le = go.GetComponent<LayoutElement>();
-            le.preferredHeight = primary ? 48 : 38;
-            if (primary)
-                le.minHeight = 48;
-
-            var textGo = new GameObject("Text", typeof(RectTransform), typeof(Text));
-            textGo.transform.SetParent(go.transform, false);
-            var t = textGo.GetComponent<Text>();
-            t.text = label;
-            t.font = UiFont();
-            t.fontSize = primary ? 18 : 14;
-            t.fontStyle = primary ? FontStyle.Bold : FontStyle.Normal;
-            t.alignment = TextAnchor.MiddleCenter;
-            t.color = Color.white;
-            var rt = t.GetComponent<RectTransform>();
-            rt.anchorMin = Vector2.zero;
-            rt.anchorMax = Vector2.one;
-            rt.offsetMin = Vector2.zero;
-            rt.offsetMax = Vector2.zero;
-
-            var btn = go.GetComponent<Button>();
-            btn.onClick.AddListener(onClick);
-            return btn;
+            _titleStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 28,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                normal = { textColor = new Color(0.55f, 0.85f, 1f) },
+            };
+            _labelStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 18,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+                normal = { textColor = Color.white },
+                wordWrap = true,
+            };
+            _statusStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize = 13,
+                wordWrap = true,
+                normal = { textColor = new Color(0.9f, 0.92f, 0.95f) },
+            };
+            _buttonStyle = new GUIStyle(GUI.skin.button)
+            {
+                fontSize = 16,
+                fontStyle = FontStyle.Bold,
+            };
+            _boxStyle = new GUIStyle(GUI.skin.box);
+            _stylesReady = true;
         }
 
         void OnLoginClicked()
         {
             if (_busy)
                 return;
-            EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
+
+            EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl)
                 ? "http://127.0.0.1:8000/api/v1"
-                : _baseUrl.text.Trim();
+                : _baseUrl.Trim();
 
             SetBusy(true);
             SetUiState("processing");
             SetStatus("Autenticando contra B…");
-            StartCoroutine(_api.Login(_user.text.Trim(), _pass.text, (ok, msg) =>
+            StartCoroutine(_api.Login(_user.Trim(), _pass, (ok, msg) =>
             {
                 SetBusy(false);
                 SetUiState("idle");
                 if (ok)
                 {
                     SetStatus(
-                        "Login OK\n"
-                        + "Usuario: " + EmpathiaAuthState.Username + "\n"
-                        + "Token: " + EmpathiaAuthState.TokenPreview + "\n"
-                        + "Ya puedes crear una sesión.");
+                        "Login OK\nUsuario: " + EmpathiaAuthState.Username
+                        + "\nToken: " + EmpathiaAuthState.TokenPreview
+                        + "\nYa puedes crear una sesión.");
                 }
                 else
                 {
@@ -418,7 +263,7 @@ namespace Empathia
             else
             {
                 SetUiState("listening");
-                SetStatus("Generando WAV de prueba (silencio corto)…");
+                SetStatus("Generando WAV de prueba…");
                 wav = EmpathiaWav.BuildSilentWav(0.35f, 16000);
                 yield return null;
             }
@@ -448,11 +293,9 @@ namespace Empathia
                 yield break;
             }
 
-            SetReply(result.ReplyText);
+            SetReply(string.IsNullOrEmpty(result.ReplyText) ? "(vacía)" : result.ReplyText);
             SetStatus("Respuesta lista.\nTranscript: " + result.Transcript
-                      + "\nTTS: " + result.TtsUrl
-                      + "\n" + msg);
-            Debug.Log("[Empathia] reply_text=" + result.ReplyText);
+                      + "\nTTS: " + result.TtsUrl + "\n" + msg);
 
             SetUiState("speaking");
             var ttsOk = false;
@@ -463,8 +306,7 @@ namespace Empathia
                 ttsMsg = message;
             });
 
-            SetStatus((ttsOk ? ttsMsg : "Error TTS: " + ttsMsg)
-                      + "\n\nRespuesta:\n" + result.ReplyText);
+            SetStatus((ttsOk ? ttsMsg : "Error TTS: " + ttsMsg) + "\n\nRespuesta:\n" + result.ReplyText);
 
             if (ttsOk && _audio != null && _audio.clip != null)
                 yield return new WaitForSeconds(_audio.clip.length + 0.1f);
@@ -475,7 +317,6 @@ namespace Empathia
 
         IEnumerator CaptureMic(float seconds, System.Action<byte[]> onDone)
         {
-            byte[] result = null;
             if (Microphone.devices == null || Microphone.devices.Length == 0)
             {
                 onDone(null);
@@ -492,38 +333,15 @@ namespace Empathia
             yield return new WaitForSeconds(seconds);
             Microphone.End(device);
 
-            result = EmpathiaWav.FromMicrophoneClip(clip, rate);
+            var result = EmpathiaWav.FromMicrophoneClip(clip, rate);
             if (clip != null)
                 Destroy(clip);
             onDone(result);
         }
 
-        void SetBusy(bool busy)
-        {
-            _busy = busy;
-            _loginBtn.interactable = !busy;
-            _sessionBtn.interactable = !busy;
-            _closeBtn.interactable = !busy;
-            _turnWavBtn.interactable = !busy;
-            _turnMicBtn.interactable = !busy;
-        }
-
-        void SetUiState(string state)
-        {
-            if (_stateLabel != null)
-                _stateLabel.text = "Estado UI: " + state;
-        }
-
-        void SetStatus(string message)
-        {
-            if (_status != null)
-                _status.text = message;
-        }
-
-        void SetReply(string reply)
-        {
-            if (_replyLabel != null)
-                _replyLabel.text = "Respuesta: " + (string.IsNullOrEmpty(reply) ? "(vacía)" : reply);
-        }
+        void SetBusy(bool busy) => _busy = busy;
+        void SetUiState(string state) => _uiState = state;
+        void SetStatus(string message) => _status = message;
+        void SetReply(string reply) => _reply = reply;
     }
 }
