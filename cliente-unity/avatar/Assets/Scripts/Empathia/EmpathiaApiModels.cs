@@ -73,4 +73,72 @@ namespace Empathia
         public string code;
         public string message;
     }
+
+    [Serializable]
+    public class CreateTurnResponse
+    {
+        public TurnDto turn;
+    }
+
+    [Serializable]
+    public class TurnDto
+    {
+        public string id;
+        public string session_id;
+        public int sequence_no;
+        public string status;
+        public string client_turn_key;
+    }
+
+    [Serializable]
+    public class EventsResponse
+    {
+        public EventEnvelope[] events;
+        public long next_after;
+    }
+
+    [Serializable]
+    public class EventEnvelope
+    {
+        public int v;
+        public string type;
+        public string ts;
+        public string session_id;
+        public long id;
+        public EventPayload payload;
+    }
+
+    [Serializable]
+    public class EventPayload
+    {
+        public string turn_id;
+        public int sequence_no;
+        public string client_turn_key;
+        public string transcript;
+        public string reply_text;
+        public string message;
+        public string code;
+        public bool retryable;
+        public string stage;
+        public string state;
+        public TtsInfo tts;
+    }
+
+    [Serializable]
+    public class TtsInfo
+    {
+        public string format;
+        public string url;
+    }
+
+    public class TurnResultInfo
+    {
+        public string TurnId;
+        public string ReplyText;
+        public string Transcript;
+        public string TtsUrl;
+        public string ErrorCode;
+        public string ErrorMessage;
+        public bool IsError;
+    }
 }
