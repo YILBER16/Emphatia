@@ -74,7 +74,7 @@ La URL de TTS se arma con el **mismo host** de la Base URL (evita `127.0.0.1` cu
 ### Nota de prueba A↔B (turno)
 
 - **Fecha:** (completar al probar)
-- **Base URL usada:**
+- **Base URL usada:** `http://192.168.1.78:8000/api/v1` (default en el cliente)
 - **Resultado:** pendiente (login / sesión / turn.result / TTS)
 - **Si falla:** anotar `error.code` / mensaje UI
 

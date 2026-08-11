@@ -272,7 +272,7 @@ namespace Empathia
             if (_busy)
                 return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://127.0.0.1:8000/api/v1"
+                ? "http://192.168.1.78:8000/api/v1"
                 : _baseUrl.text.Trim();
 
             SetBusy(true);

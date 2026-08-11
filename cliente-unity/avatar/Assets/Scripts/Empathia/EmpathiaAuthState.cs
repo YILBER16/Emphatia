@@ -5,7 +5,7 @@ namespace Empathia
     /// </summary>
     public static class EmpathiaAuthState
     {
-        public static string BaseUrl { get; set; } = "http://127.0.0.1:8000/api/v1";
+        public static string BaseUrl { get; set; } = "http://192.168.1.78:8000/api/v1";
         public static string Token { get; set; }
         public static string Username { get; set; }
         public static string SessionId { get; set; }
