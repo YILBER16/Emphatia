@@ -16,23 +16,32 @@ namespace Empathia
             return WrapPcm16Mono(data, sampleRate);
         }
 
-        public static byte[] FromMicrophoneClip(AudioClip clip, int sampleRate = 16000)
+        /// <param name="samplesRecorded">
+        /// Muestras por canal a exportar (p. ej. Microphone.GetPosition).
+        /// Si es &lt; 1, usa todo el clip.
+        /// </param>
+        public static byte[] FromMicrophoneClip(AudioClip clip, int samplesRecorded = -1, int sampleRate = 16000)
         {
             if (clip == null)
                 return BuildSilentWav();
 
-            var samples = new float[clip.samples * clip.channels];
-            clip.GetData(samples, 0);
+            var count = samplesRecorded > 0
+                ? Mathf.Clamp(samplesRecorded, 1, clip.samples)
+                : clip.samples;
+
+            var samples = new float[count * clip.channels];
+            if (!clip.GetData(samples, 0))
+                return BuildSilentWav();
 
             // Mezcla a mono
-            var mono = new float[clip.samples];
+            var mono = new float[count];
             if (clip.channels <= 1)
             {
                 Array.Copy(samples, mono, mono.Length);
             }
             else
             {
-                for (var i = 0; i < clip.samples; i++)
+                for (var i = 0; i < count; i++)
                 {
                     float sum = 0f;
                     for (var c = 0; c < clip.channels; c++)

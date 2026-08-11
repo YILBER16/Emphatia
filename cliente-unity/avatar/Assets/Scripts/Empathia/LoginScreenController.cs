@@ -10,12 +10,22 @@ using UnityEngine.InputSystem.UI;
 namespace Empathia
 {
     /// <summary>
-    /// Login A: UI de alta calidad (TextMeshPro + sprites HD + CanvasScaler nítido).
+    /// Login EmpathIA: UI estilo mockup 1920×1080 (fondo + tarjeta blanca).
     /// </summary>
     public class LoginScreenController : MonoBehaviour
     {
-        const float MicSeconds = 3f;
-        const float NarrowBreakpoint = 900f;
+        const int MaxMicSeconds = 300;
+        const int MicSampleRate = 16000;
+        const float RefW = 1920f;
+        const float RefH = 1080f;
+
+        static readonly Color Navy = new Color(0.12f, 0.14f, 0.22f, 1f);
+        static readonly Color Muted = new Color(0.42f, 0.45f, 0.55f, 1f);
+        static readonly Color FieldBg = new Color(0.96f, 0.96f, 0.98f, 1f);
+        static readonly Color FieldBorder = new Color(0.86f, 0.87f, 0.91f, 1f);
+        static readonly Color Purple = new Color(0.55f, 0.28f, 0.95f, 1f);
+        static readonly Color Blue = new Color(0.18f, 0.55f, 0.98f, 1f);
+        static readonly Color CardGlass = new Color(1f, 1f, 1f, 0.78f);
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Bootstrap()
@@ -35,36 +45,47 @@ namespace Empathia
         TMP_FontAsset _tmpFont;
         Sprite _roundLg;
         Sprite _roundSm;
+        Sprite _roundPill;
+        Sprite _gradBtn;
 
+        RectTransform _rootRt;
         RectTransform _cardRt;
-        RectTransform _viewportRt;
-        RectTransform _contentRt;
-        VerticalLayoutGroup _contentLayout;
+        RectTransform _labRt;
+        RectTransform _confirmRt;
+        RectTransform _healthRt;
         CanvasScaler _scaler;
-        ScrollRect _scroll;
-        Transform _row1;
-        Transform _row2;
-        HorizontalLayoutGroup _row1Layout;
-        HorizontalLayoutGroup _row2Layout;
+
+        GameObject _loginView;
+        GameObject _confirmView;
+        GameObject _healthView;
+        GameObject _cardShadowGo;
 
         TMP_InputField _baseUrl;
         TMP_InputField _user;
         TMP_InputField _pass;
-        TextMeshProUGUI _brand;
-        TextMeshProUGUI _title;
-        TextMeshProUGUI _subtitle;
         TextMeshProUGUI _status;
         TextMeshProUGUI _state;
         TextMeshProUGUI _reply;
+        TextMeshProUGUI _loginStatus;
+        TextMeshProUGUI _welcomeTitle;
+        TextMeshProUGUI _welcomeSub;
         Button _loginBtn;
-        Button _sessionBtn;
-        Button _closeBtn;
-        Button _turnWavBtn;
-        Button _turnMicBtn;
+        Button _registerBtn;
+        Button _confirmBtn;
+        Button _recordBtn;
+        TextMeshProUGUI _recordBtnLabel;
+        Button _eyeBtn;
+        TextMeshProUGUI _recordHint;
+        bool _showPass;
         bool _busy;
+        bool _recording;
+        bool _stopRecording;
+        string _micDevice;
+        AudioClip _micClip;
         bool _built;
         Vector2 _lastScreen;
-        bool _narrow;
+        enum UiScreen { Login, Confirm, Health }
+        UiScreen _screen = UiScreen.Login;
 
         void Awake()
         {
@@ -73,10 +94,11 @@ namespace Empathia
                 _api = GetComponent<EmpathiaApiClient>() ?? gameObject.AddComponent<EmpathiaApiClient>();
                 _audio = GetComponent<AudioSource>() ?? gameObject.AddComponent<AudioSource>();
                 EnsureEventSystem();
+                ApplyDisplayQuality();
                 BuildUi();
-                ApplyResponsiveLayout();
-                SetStatus("Login listo.\nB: 192.168.1.78:8000\nLab: estudiante1 / password");
-                Debug.Log("[Empathia] UI alta calidad (TMP + HD). Pestaña Game + Play.");
+                ApplyLayout();
+                SetLoginStatus("Listo · B 192.168.1.78:8000 · estudiante1 / password");
+                Debug.Log("[Empathia] UI 1920x1080 @60 · Login → Salud. Game view 1920x1080 + Play.");
             }
             catch (System.Exception ex)
             {
@@ -90,7 +112,7 @@ namespace Empathia
                 return;
             var size = new Vector2(Screen.width, Screen.height);
             if (size != _lastScreen)
-                ApplyResponsiveLayout();
+                ApplyLayout();
         }
 
         void EnsureEventSystem()
@@ -108,31 +130,37 @@ namespace Empathia
 #endif
         }
 
+        void ApplyDisplayQuality()
+        {
+            // Resolución PC HD y objetivo 60 FPS (1080p60)
+            Screen.SetResolution(1920, 1080, FullScreenMode.Windowed);
+            QualitySettings.vSyncCount = 1;
+            Application.targetFrameRate = 60;
+        }
+
         TMP_FontAsset GetTmpFont()
         {
             if (_tmpFont != null)
                 return _tmpFont;
-
             _tmpFont = TMP_Settings.defaultFontAsset;
             if (_tmpFont == null)
-            {
                 _tmpFont = Resources.Load<TMP_FontAsset>("Fonts & Materials/LiberationSans SDF");
-            }
-
             return _tmpFont;
         }
 
-        Sprite RoundSprite(bool large)
+        Sprite RoundSprite(int size, int radius)
         {
-            if (large)
+            if (size >= 240 && radius >= 40)
             {
-                if (_roundLg == null)
-                    _roundLg = BuildRoundedSprite(256, 48);
+                if (_roundLg == null) _roundLg = BuildRoundedSprite(size, radius);
                 return _roundLg;
             }
-
-            if (_roundSm == null)
-                _roundSm = BuildRoundedSprite(128, 28);
+            if (radius >= 40)
+            {
+                if (_roundPill == null) _roundPill = BuildRoundedSprite(128, 48);
+                return _roundPill;
+            }
+            if (_roundSm == null) _roundSm = BuildRoundedSprite(128, 28);
             return _roundSm;
         }
 
@@ -144,7 +172,6 @@ namespace Empathia
                 filterMode = FilterMode.Bilinear,
                 anisoLevel = 4,
             };
-
             var pixels = new Color32[size * size];
             float r = radius;
             float max = size - 1;
@@ -152,62 +179,148 @@ namespace Empathia
             {
                 for (var x = 0; x < size; x++)
                 {
-                    float dx = 0f;
-                    float dy = 0f;
-                    if (x < r && y < r)
-                    {
-                        dx = r - x - 0.5f;
-                        dy = r - y - 0.5f;
-                    }
-                    else if (x > max - r && y < r)
-                    {
-                        dx = x - (max - r) - 0.5f;
-                        dy = r - y - 0.5f;
-                    }
-                    else if (x < r && y > max - r)
-                    {
-                        dx = r - x - 0.5f;
-                        dy = y - (max - r) - 0.5f;
-                    }
-                    else if (x > max - r && y > max - r)
-                    {
-                        dx = x - (max - r) - 0.5f;
-                        dy = y - (max - r) - 0.5f;
-                    }
+                    float dx = 0f, dy = 0f;
+                    if (x < r && y < r) { dx = r - x - 0.5f; dy = r - y - 0.5f; }
+                    else if (x > max - r && y < r) { dx = x - (max - r) - 0.5f; dy = r - y - 0.5f; }
+                    else if (x < r && y > max - r) { dx = r - x - 0.5f; dy = y - (max - r) - 0.5f; }
+                    else if (x > max - r && y > max - r) { dx = x - (max - r) - 0.5f; dy = y - (max - r) - 0.5f; }
 
                     byte a = 255;
                     if (dx != 0f || dy != 0f)
                     {
                         var dist = Mathf.Sqrt(dx * dx + dy * dy);
-                        // Antialias suave (~1.5 px)
-                        var aa = 1.5f;
-                        if (dist >= r + aa)
-                            a = 0;
+                        const float aa = 1.5f;
+                        if (dist >= r + aa) a = 0;
                         else if (dist > r - aa)
                             a = (byte)Mathf.Clamp(Mathf.RoundToInt(((r + aa) - dist) / (aa * 2f) * 255f), 0, 255);
                     }
-
                     pixels[y * size + x] = new Color32(255, 255, 255, a);
                 }
+            }
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(radius, radius, radius, radius));
+        }
+
+        Sprite GradientButtonSprite()
+        {
+            if (_gradBtn != null) return _gradBtn;
+            const int w = 256, h = 64;
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
+            {
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear,
+            };
+            var pixels = new Color32[w * h];
+            float rr = h * 0.5f;
+            float cy = h * 0.5f;
+            for (var y = 0; y < h; y++)
+            {
+                for (var x = 0; x < w; x++)
+                {
+                    var t = x / (w - 1f);
+                    var c = Color.Lerp(Purple, Blue, t);
+                    float dist;
+                    if (x >= rr && x <= w - 1 - rr)
+                        dist = Mathf.Abs(y - cy);
+                    else
+                        dist = Vector2.Distance(new Vector2(x, y), new Vector2(x < rr ? rr : w - 1 - rr, cy));
+
+                    byte a = 255;
+                    const float aa = 1.2f;
+                    if (dist >= rr + aa) a = 0;
+                    else if (dist > rr - aa)
+                        a = (byte)Mathf.Clamp(Mathf.RoundToInt(((rr + aa) - dist) / (aa * 2f) * 255f), 0, 255);
+
+                    pixels[y * w + x] = new Color32(
+                        (byte)Mathf.RoundToInt(c.r * 255f),
+                        (byte)Mathf.RoundToInt(c.g * 255f),
+                        (byte)Mathf.RoundToInt(c.b * 255f), a);
+                }
+            }
+            tex.SetPixels32(pixels);
+            tex.Apply(false, true);
+            _gradBtn = Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(rr, rr, rr, rr));
+            return _gradBtn;
+        }
+
+        static Sprite BuildIconSprite(string kind)
+        {
+            const int s = 64;
+            var tex = new Texture2D(s, s, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear };
+            var clear = new Color32(0, 0, 0, 0);
+            var ink = new Color32(120, 125, 145, 255);
+            var pixels = new Color32[s * s];
+            for (var i = 0; i < pixels.Length; i++) pixels[i] = clear;
+
+            void Disc(float cx, float cy, float r, Color32 col)
+            {
+                for (var y = 0; y < s; y++)
+                for (var x = 0; x < s; x++)
+                {
+                    var d = Vector2.Distance(new Vector2(x, y), new Vector2(cx, cy));
+                    if (d <= r) pixels[y * s + x] = col;
+                    else if (d < r + 1.2f)
+                    {
+                        var a = (byte)((r + 1.2f - d) / 1.2f * col.a);
+                        if (a > pixels[y * s + x].a) pixels[y * s + x] = new Color32(col.r, col.g, col.b, a);
+                    }
+                }
+            }
+
+            void Rect(int x0, int y0, int x1, int y1, Color32 col)
+            {
+                for (var y = y0; y <= y1; y++)
+                for (var x = x0; x <= x1; x++)
+                    if (x >= 0 && x < s && y >= 0 && y < s)
+                        pixels[y * s + x] = col;
+            }
+
+            if (kind == "user")
+            {
+                Disc(32, 42, 10, ink);
+                Disc(32, 18, 14, ink);
+                Rect(18, 0, 46, 12, clear);
+            }
+            else if (kind == "lock")
+            {
+                Rect(20, 8, 44, 32, ink);
+                for (var y = 32; y < 50; y++)
+                for (var x = 22; x < 42; x++)
+                {
+                    var d = Mathf.Abs(Vector2.Distance(new Vector2(x, y), new Vector2(32, 32)) - 10f);
+                    if (d < 2.2f) pixels[y * s + x] = ink;
+                }
+                Disc(32, 20, 3, clear);
+            }
+            else // eye
+            {
+                for (var y = 0; y < s; y++)
+                for (var x = 0; x < s; x++)
+                {
+                    var nx = (x - 32) / 22f;
+                    var ny = (y - 32) / 12f;
+                    if (nx * nx + ny * ny <= 1f) pixels[y * s + x] = ink;
+                }
+                Disc(32, 32, 6, clear);
+                Disc(32, 32, 3.5f, ink);
             }
 
             tex.SetPixels32(pixels);
             tex.Apply(false, true);
-            var border = new Vector4(radius, radius, radius, radius);
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, border);
+            return Sprite.Create(tex, new Rect(0, 0, s, s), new Vector2(0.5f, 0.5f), 100f);
         }
 
-        void ApplyRounded(Image img, bool large)
+        void ApplyRounded(Image img, Sprite sprite, float ppu = 1.2f)
         {
-            img.sprite = RoundSprite(large);
+            img.sprite = sprite;
             img.type = Image.Type.Sliced;
-            img.pixelsPerUnitMultiplier = large ? 1.15f : 1.25f;
+            img.pixelsPerUnitMultiplier = ppu;
         }
 
         void BuildUi()
         {
-            if (_built)
-                return;
+            if (_built) return;
             _built = true;
 
             var canvasGo = new GameObject("EmpathiaLoginCanvas");
@@ -215,7 +328,6 @@ namespace Empathia
             var canvas = canvasGo.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 1000;
-            canvas.pixelPerfect = false;
             canvas.additionalShaderChannels =
                 AdditionalCanvasShaderChannels.TexCoord1 |
                 AdditionalCanvasShaderChannels.Normal |
@@ -223,186 +335,262 @@ namespace Empathia
 
             _scaler = canvasGo.AddComponent<CanvasScaler>();
             _scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            // Referencia alta para más nitidez en pantallas grandes / HiDPI
-            _scaler.referenceResolution = new Vector2(2560, 1440);
+            _scaler.referenceResolution = new Vector2(RefW, RefH);
             _scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
             _scaler.matchWidthOrHeight = 0.5f;
-            _scaler.referencePixelsPerUnit = 100f;
             canvasGo.AddComponent<GraphicRaycaster>();
 
-            var bg = CreateImage(canvasGo.transform, "BG", new Color(0.06f, 0.08f, 0.12f, 1f), rounded: false);
-            StretchFull(bg.rectTransform);
+            _rootRt = canvasGo.GetComponent<RectTransform>();
 
-            var card = CreateImage(canvasGo.transform, "Card", new Color(0.13f, 0.17f, 0.23f, 1f), rounded: true, large: true);
-            _cardRt = card.rectTransform;
-            _cardRt.anchorMin = _cardRt.anchorMax = _cardRt.pivot = new Vector2(0.5f, 0.5f);
-
-            var viewportGo = new GameObject("Viewport", typeof(RectTransform), typeof(Image), typeof(RectMask2D));
-            viewportGo.transform.SetParent(card.transform, false);
-            _viewportRt = viewportGo.GetComponent<RectTransform>();
-            StretchFull(_viewportRt);
-            _viewportRt.offsetMin = new Vector2(20, 20);
-            _viewportRt.offsetMax = new Vector2(-20, -20);
-            var vpImg = viewportGo.GetComponent<Image>();
-            vpImg.color = new Color(1, 1, 1, 0.002f);
-            vpImg.raycastTarget = true;
-
-            var content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
-            content.transform.SetParent(viewportGo.transform, false);
-            _contentRt = content.GetComponent<RectTransform>();
-            _contentRt.anchorMin = new Vector2(0f, 1f);
-            _contentRt.anchorMax = new Vector2(1f, 1f);
-            _contentRt.pivot = new Vector2(0.5f, 1f);
-            _contentRt.anchoredPosition = Vector2.zero;
-            _contentRt.sizeDelta = Vector2.zero;
-
-            _contentLayout = content.GetComponent<VerticalLayoutGroup>();
-            _contentLayout.padding = new RectOffset(22, 22, 14, 22);
-            _contentLayout.spacing = 10;
-            _contentLayout.childAlignment = TextAnchor.UpperCenter;
-            _contentLayout.childControlWidth = true;
-            _contentLayout.childControlHeight = true;
-            _contentLayout.childForceExpandWidth = true;
-            _contentLayout.childForceExpandHeight = false;
-
-            var fitter = content.GetComponent<ContentSizeFitter>();
-            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
-            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-
-            _scroll = card.gameObject.AddComponent<ScrollRect>();
-            _scroll.content = _contentRt;
-            _scroll.viewport = _viewportRt;
-            _scroll.horizontal = false;
-            _scroll.vertical = true;
-            _scroll.movementType = ScrollRect.MovementType.Clamped;
-            _scroll.scrollSensitivity = 45f;
-
-            _brand = AddLabel(_contentRt, "EmpathIA", 36, FontStyles.Bold, new Color(0.55f, 0.86f, 1f), 42, TextAlignmentOptions.Center);
-            _title = AddLabel(_contentRt, "Inicio de sesión", 26, FontStyles.Bold, Color.white, 34, TextAlignmentOptions.Center);
-            _subtitle = AddLabel(_contentRt, "Autenticación contra servidor B", 15, FontStyles.Normal, new Color(1, 1, 1, 0.72f), 24, TextAlignmentOptions.Center);
-
-            _baseUrl = AddInput(_contentRt, "Servidor", EmpathiaAuthState.BaseUrl);
-            _user = AddInput(_contentRt, "Usuario", "estudiante1");
-            _pass = AddInput(_contentRt, "Contraseña", "password");
-            _pass.contentType = TMP_InputField.ContentType.Password;
-
-            _loginBtn = AddButton(_contentRt, "Iniciar sesión", new Color(0.16f, 0.66f, 0.46f), 48, OnLogin);
-            _state = AddLabel(_contentRt, "Estado UI: idle", 15, FontStyles.Bold, Color.white, 24, TextAlignmentOptions.Left);
-            _status = AddLabel(_contentRt, "", 14, FontStyles.Normal, new Color(0.92f, 0.94f, 0.96f), 78, TextAlignmentOptions.TopLeft);
-
-            AddLabel(_contentRt, "── Después del login ──", 13, FontStyles.Italic, new Color(1, 1, 1, 0.45f), 22, TextAlignmentOptions.Center);
-
-            _row1 = AddRow(_contentRt);
-            _row1Layout = _row1.GetComponent<HorizontalLayoutGroup>();
-            _sessionBtn = AddButton(_row1, "Crear sesión", new Color(0.22f, 0.5f, 0.8f), 40, OnCreateSession);
-            _closeBtn = AddButton(_row1, "Cerrar sesión", new Color(0.22f, 0.5f, 0.8f), 40, OnCloseSession);
-
-            _row2 = AddRow(_contentRt);
-            _row2Layout = _row2.GetComponent<HorizontalLayoutGroup>();
-            _turnWavBtn = AddButton(_row2, "Turno WAV", new Color(0.22f, 0.5f, 0.8f), 40, () => StartCoroutine(RunTurn(false)));
-            _turnMicBtn = AddButton(_row2, "Turno mic 3s", new Color(0.22f, 0.5f, 0.8f), 40, () => StartCoroutine(RunTurn(true)));
-
-            _reply = AddLabel(_contentRt, "Respuesta: (sin respuesta)", 14, FontStyles.Normal, new Color(0.75f, 0.95f, 0.82f), 48, TextAlignmentOptions.TopLeft);
-        }
-
-        void ApplyResponsiveLayout()
-        {
-            _lastScreen = new Vector2(Screen.width, Screen.height);
-            if (_scaler == null || _cardRt == null)
-                return;
-
-            var aspect = Screen.width / Mathf.Max(1f, (float)Screen.height);
-            _scaler.matchWidthOrHeight = aspect >= 1.15f ? 0.25f : 0.75f;
-
-            var scale = Mathf.Lerp(
-                Screen.width / _scaler.referenceResolution.x,
-                Screen.height / _scaler.referenceResolution.y,
-                _scaler.matchWidthOrHeight);
-            var canvasW = Screen.width / Mathf.Max(0.01f, scale);
-            var canvasH = Screen.height / Mathf.Max(0.01f, scale);
-
-            _narrow = canvasW < NarrowBreakpoint;
-
-            var cardW = Mathf.Clamp(canvasW * (_narrow ? 0.96f : 0.88f), 340f, 640f);
-            var cardH = Mathf.Clamp(canvasH * 0.94f, 520f, canvasH * 0.96f);
-            _cardRt.sizeDelta = new Vector2(cardW, cardH);
-
-            if (_contentLayout != null)
+            // Fondo mockup 16:9 (cover)
+            var bgGo = new GameObject("Background", typeof(RectTransform), typeof(RawImage), typeof(AspectRatioFitter));
+            bgGo.transform.SetParent(canvasGo.transform, false);
+            var bgRt = bgGo.GetComponent<RectTransform>();
+            StretchFull(bgRt);
+            var raw = bgGo.GetComponent<RawImage>();
+            var tex = Resources.Load<Texture2D>("Empathia/LoginBackground");
+            if (tex != null)
             {
-                var pad = _narrow ? 14 : 22;
-                _contentLayout.padding = new RectOffset(pad, pad, 12, 18);
-                _contentLayout.spacing = _narrow ? 8 : 10;
-            }
-
-            ConfigureRow(_row1Layout, _row1, _narrow);
-            ConfigureRow(_row2Layout, _row2, _narrow);
-
-            SetFontSize(_brand, _narrow ? 28 : 36);
-            SetFontSize(_title, _narrow ? 20 : 26);
-            SetFontSize(_subtitle, _narrow ? 13 : 15);
-
-            Canvas.ForceUpdateCanvases();
-            if (_contentRt != null)
-                LayoutRebuilder.ForceRebuildLayoutImmediate(_contentRt);
-            if (_scroll != null)
-                _scroll.verticalNormalizedPosition = 1f;
-        }
-
-        static void ConfigureRow(HorizontalLayoutGroup h, Transform row, bool narrow)
-        {
-            if (h == null || row == null)
-                return;
-
-            var vertical = row.GetComponent<VerticalLayoutGroup>();
-            var le = row.GetComponent<LayoutElement>();
-
-            if (narrow)
-            {
-                h.enabled = false;
-                if (vertical == null)
-                {
-                    vertical = row.gameObject.AddComponent<VerticalLayoutGroup>();
-                    vertical.spacing = 8;
-                    vertical.childForceExpandWidth = true;
-                    vertical.childForceExpandHeight = false;
-                    vertical.childControlWidth = true;
-                    vertical.childControlHeight = true;
-                }
-
-                vertical.enabled = true;
-                if (le != null)
-                {
-                    le.preferredHeight = 92;
-                    le.minHeight = 92;
-                }
+                raw.texture = tex;
+                raw.color = Color.white;
+                var ar = bgGo.GetComponent<AspectRatioFitter>();
+                ar.aspectMode = AspectRatioFitter.AspectMode.EnvelopeParent;
+                ar.aspectRatio = tex.width / (float)Mathf.Max(1, tex.height);
             }
             else
             {
-                if (vertical != null)
-                    vertical.enabled = false;
-                h.enabled = true;
-                if (le != null)
-                {
-                    le.preferredHeight = 42;
-                    le.minHeight = 42;
-                }
+                raw.texture = BuildFallbackGradient(64, 36);
+                raw.color = Color.white;
+                bgGo.GetComponent<AspectRatioFitter>().aspectMode = AspectRatioFitter.AspectMode.None;
             }
+
+            BuildLoginView(canvasGo.transform);
+            BuildConfirmView(canvasGo.transform);
+            BuildHealthView(canvasGo.transform);
+            ShowScreen(UiScreen.Login);
         }
 
-        static void SetFontSize(TextMeshProUGUI t, float size)
+        void BuildLoginView(Transform canvas)
         {
-            if (t != null)
-                t.fontSize = size;
+            _loginView = new GameObject("LoginView", typeof(RectTransform));
+            _loginView.transform.SetParent(canvas, false);
+            StretchFull(_loginView.GetComponent<RectTransform>());
+
+            var shadow = CreateImage(_loginView.transform, "CardShadow", new Color(0.25f, 0.2f, 0.45f, 0.18f));
+            ApplyRounded(shadow, RoundSprite(256, 48), 1.0f);
+            _cardShadowGo = shadow.gameObject;
+            var shadowRt = shadow.rectTransform;
+            shadowRt.anchorMin = shadowRt.anchorMax = shadowRt.pivot = new Vector2(0.5f, 0.42f);
+            shadowRt.sizeDelta = new Vector2(510, 470);
+            shadowRt.anchoredPosition = new Vector2(0, -6);
+
+            var card = CreateImage(_loginView.transform, "Card", CardGlass);
+            ApplyRounded(card, RoundSprite(256, 48), 1.05f);
+            _cardRt = card.rectTransform;
+            _cardRt.anchorMin = _cardRt.anchorMax = _cardRt.pivot = new Vector2(0.5f, 0.42f);
+            _cardRt.sizeDelta = new Vector2(500, 480);
+            _cardRt.anchoredPosition = Vector2.zero;
+
+            var content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup));
+            content.transform.SetParent(_cardRt, false);
+            var contentRt = content.GetComponent<RectTransform>();
+            StretchFull(contentRt);
+            contentRt.offsetMin = new Vector2(36, 24);
+            contentRt.offsetMax = new Vector2(-36, -24);
+            var v = content.GetComponent<VerticalLayoutGroup>();
+            v.spacing = 12;
+            v.childAlignment = TextAnchor.UpperCenter;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+            v.padding = new RectOffset(0, 0, 4, 0);
+
+            _baseUrl = AddCompactInput(content.transform, "Servidor", EmpathiaAuthState.BaseUrl);
+            _user = AddIconInput(content.transform, "Usuario o correo electrónico", "estudiante1", "user", false);
+            _pass = AddIconInput(content.transform, "Contraseña", "password", "lock", true);
+
+            _loginBtn = AddGradientButton(content.transform, "Iniciar sesión", 64, OnLogin);
+            _registerBtn = AddOutlineButton(content.transform, "Registrarse", 58, () =>
+            {
+                SetLoginStatus("Registro: próximamente (usa estudiante1 / password).");
+            });
+
+            AddLabel(content.transform, "Tu bienestar emocional importa.", 14, FontStyles.Normal, Muted, 20, TextAlignmentOptions.Center);
+            _loginStatus = AddLabel(content.transform, "", 12, FontStyles.Normal, new Color(0.75f, 0.25f, 0.35f), 28, TextAlignmentOptions.Center);
         }
 
-        Image CreateImage(Transform parent, string name, Color color, bool rounded, bool large = false)
+        void BuildConfirmView(Transform canvas)
+        {
+            _confirmView = new GameObject("ConfirmView", typeof(RectTransform));
+            _confirmView.transform.SetParent(canvas, false);
+            StretchFull(_confirmView.GetComponent<RectTransform>());
+
+            var dim = CreateImage(_confirmView.transform, "Dim", new Color(0.1f, 0.08f, 0.18f, 0.35f));
+            StretchFull(dim.rectTransform);
+            dim.raycastTarget = true;
+
+            var card = CreateImage(_confirmView.transform, "ConfirmCard", CardGlass);
+            ApplyRounded(card, RoundSprite(256, 48), 1.05f);
+            _confirmRt = card.rectTransform;
+            _confirmRt.anchorMin = _confirmRt.anchorMax = _confirmRt.pivot = new Vector2(0.5f, 0.5f);
+            _confirmRt.sizeDelta = new Vector2(520, 360);
+
+            var content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup));
+            content.transform.SetParent(_confirmRt, false);
+            var contentRt = content.GetComponent<RectTransform>();
+            StretchFull(contentRt);
+            contentRt.offsetMin = new Vector2(36, 28);
+            contentRt.offsetMax = new Vector2(-36, -28);
+            var v = content.GetComponent<VerticalLayoutGroup>();
+            v.spacing = 12;
+            v.childAlignment = TextAnchor.MiddleCenter;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+
+            AddLabel(content.transform, "Salud", 14, FontStyles.Bold, Purple, 20, TextAlignmentOptions.Center);
+            AddLabel(content.transform, "Inicio de sesión confirmado", 26, FontStyles.Bold, Navy, 36, TextAlignmentOptions.Center);
+            AddLabel(content.transform, "Tu cuenta está lista. Continúa para entrar a tu espacio de bienestar.", 15, FontStyles.Normal, Muted, 48, TextAlignmentOptions.Center);
+            _confirmBtn = AddGradientButton(content.transform, "Entrar a Salud", 64, OnConfirmEnterHealth);
+            AddOutlineButton(content.transform, "Volver", 56, () => ShowScreen(UiScreen.Login));
+        }
+
+        void BuildHealthView(Transform canvas)
+        {
+            _healthView = new GameObject("HealthView", typeof(RectTransform));
+            _healthView.transform.SetParent(canvas, false);
+            StretchFull(_healthView.GetComponent<RectTransform>());
+
+            var card = CreateImage(_healthView.transform, "HealthCard", CardGlass);
+            ApplyRounded(card, RoundSprite(256, 48), 1.05f);
+            _healthRt = card.rectTransform;
+            _healthRt.anchorMin = _healthRt.anchorMax = _healthRt.pivot = new Vector2(0.5f, 0.55f);
+            _healthRt.sizeDelta = new Vector2(780, 480);
+
+            var content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup));
+            content.transform.SetParent(_healthRt, false);
+            var contentRt = content.GetComponent<RectTransform>();
+            StretchFull(contentRt);
+            contentRt.offsetMin = new Vector2(40, 28);
+            contentRt.offsetMax = new Vector2(-40, -28);
+            var v = content.GetComponent<VerticalLayoutGroup>();
+            v.spacing = 10;
+            v.childAlignment = TextAnchor.UpperCenter;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+
+            AddLabel(content.transform, "Pestaña Salud", 13, FontStyles.Bold, Purple, 18, TextAlignmentOptions.Center);
+            _welcomeTitle = AddLabel(content.transform, "¡Bienvenido!", 34, FontStyles.Bold, Navy, 44, TextAlignmentOptions.Center);
+            _welcomeSub = AddLabel(content.transform, "Este es tu espacio de acompañamiento emocional.", 16, FontStyles.Normal, Muted, 28, TextAlignmentOptions.Center);
+            _recordHint = AddLabel(content.transform, "1.er toque: grabar · 2.º toque: detener", 14, FontStyles.Normal, Muted, 24, TextAlignmentOptions.Center);
+
+            _recordBtn = AddGradientButton(content.transform, "Grabar audio", 72, OnRecordPressed, 22f);
+            var textTf = _recordBtn.transform.Find("Text");
+            _recordBtnLabel = textTf != null
+                ? textTf.GetComponent<TextMeshProUGUI>()
+                : _recordBtn.GetComponentInChildren<TextMeshProUGUI>();
+
+            _state = AddLabel(content.transform, "Estado UI: idle", 13, FontStyles.Bold, Navy, 20, TextAlignmentOptions.Center);
+            _status = AddLabel(content.transform, "", 13, FontStyles.Normal, Muted, 40, TextAlignmentOptions.Center);
+            _reply = AddLabel(content.transform, "Respuesta: (sin respuesta)", 13, FontStyles.Normal, new Color(0.2f, 0.55f, 0.4f), 36, TextAlignmentOptions.Center);
+
+            _labRt = _healthRt;
+        }
+
+        void OnRecordPressed()
+        {
+            if (_recording)
+            {
+                _stopRecording = true;
+                if (_recordBtnLabel != null)
+                {
+                    _recordBtnLabel.text = "Deteniendo…";
+                    _recordBtnLabel.ForceMeshUpdate();
+                }
+                return;
+            }
+
+            if (_busy)
+                return;
+
+            // Cambia el texto al instante (antes de sesión/mic)
+            SetRecordButtonUi(true);
+            StartCoroutine(RecordAudioTurn());
+        }
+
+        void SetRecordButtonUi(bool recording)
+        {
+            if (_recordBtnLabel == null && _recordBtn != null)
+            {
+                var textTf = _recordBtn.transform.Find("Text");
+                _recordBtnLabel = textTf != null
+                    ? textTf.GetComponent<TextMeshProUGUI>()
+                    : _recordBtn.GetComponentInChildren<TextMeshProUGUI>();
+            }
+
+            if (_recordBtnLabel != null)
+            {
+                _recordBtnLabel.text = recording ? "Detener audio" : "Grabar audio";
+                _recordBtnLabel.ForceMeshUpdate();
+            }
+
+            if (_recordHint != null)
+                _recordHint.text = recording
+                    ? "Grabando… toca de nuevo para detener"
+                    : "1.er toque: grabar · 2.º toque: detener";
+        }
+
+        void ShowScreen(UiScreen screen)
+        {
+            _screen = screen;
+            if (_loginView != null) _loginView.SetActive(screen == UiScreen.Login);
+            if (_confirmView != null) _confirmView.SetActive(screen == UiScreen.Confirm);
+            if (_healthView != null) _healthView.SetActive(screen == UiScreen.Health);
+        }
+
+        void OnConfirmEnterHealth()
+        {
+            var name = string.IsNullOrWhiteSpace(EmpathiaAuthState.Username)
+                ? (_user != null ? _user.text.Trim() : "usuario")
+                : EmpathiaAuthState.Username;
+            if (_welcomeTitle != null)
+                _welcomeTitle.text = "¡Bienvenido, " + name + "!";
+            if (_welcomeSub != null)
+                _welcomeSub.text = "Tu bienestar importa. Empieza cuando quieras tu acompañamiento.";
+            SetStatus("En Salud · token " + EmpathiaAuthState.TokenPreview);
+            SetState("idle");
+            ShowScreen(UiScreen.Health);
+        }
+
+        void ApplyLayout()
+        {
+            _lastScreen = new Vector2(Screen.width, Screen.height);
+            if (_scaler == null) return;
+
+            var aspect = Screen.width / Mathf.Max(1f, (float)Screen.height);
+            _scaler.matchWidthOrHeight = Mathf.Abs(aspect - (RefW / RefH)) < 0.08f ? 0.5f : (aspect >= 1.4f ? 0.5f : 0.7f);
+
+            if (_cardRt != null)
+            {
+                _cardRt.anchorMin = _cardRt.anchorMax = new Vector2(0.5f, 0.42f);
+                _cardRt.sizeDelta = new Vector2(500, 480);
+            }
+            if (_confirmRt != null)
+                _confirmRt.sizeDelta = new Vector2(520, 360);
+            if (_healthRt != null)
+                _healthRt.sizeDelta = new Vector2(780, 500);
+        }
+
+        Image CreateImage(Transform parent, string name, Color color)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(Image));
             go.transform.SetParent(parent, false);
             var img = go.GetComponent<Image>();
             img.color = color;
-            if (rounded)
-                ApplyRounded(img, large);
             return img;
         }
 
@@ -412,6 +600,22 @@ namespace Empathia
             rt.anchorMax = Vector2.one;
             rt.offsetMin = Vector2.zero;
             rt.offsetMax = Vector2.zero;
+        }
+
+        static Texture2D BuildFallbackGradient(int w, int h)
+        {
+            var tex = new Texture2D(w, h, TextureFormat.RGB24, false);
+            for (var y = 0; y < h; y++)
+            for (var x = 0; x < w; x++)
+            {
+                var u = x / (w - 1f);
+                var v = y / (h - 1f);
+                var c1 = Color.Lerp(new Color(1f, 0.72f, 0.45f), new Color(0.55f, 0.85f, 0.95f), u);
+                var c2 = Color.Lerp(new Color(0.85f, 0.45f, 0.85f), new Color(0.45f, 0.55f, 0.95f), u);
+                tex.SetPixel(x, y, Color.Lerp(c2, c1, v));
+            }
+            tex.Apply(false, true);
+            return tex;
         }
 
         TextMeshProUGUI AddLabel(Transform parent, string text, float size, FontStyles style, Color color, float height, TextAlignmentOptions align)
@@ -426,10 +630,7 @@ namespace Empathia
             t.color = color;
             t.alignment = align;
             t.enableWordWrapping = true;
-            t.overflowMode = TextOverflowModes.Overflow;
             t.raycastTarget = false;
-            // Mejor nitidez en pantallas HiDPI
-            t.enableAutoSizing = false;
             var le = go.GetComponent<LayoutElement>();
             le.preferredHeight = height;
             le.minHeight = height;
@@ -437,43 +638,51 @@ namespace Empathia
             return t;
         }
 
-        TMP_InputField AddInput(Transform parent, string title, string value)
+        TMP_InputField AddIconInput(Transform parent, string placeholder, string value, string iconKind, bool password)
         {
-            var wrap = new GameObject(title + "Wrap", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
-            wrap.transform.SetParent(parent, false);
-            var v = wrap.GetComponent<VerticalLayoutGroup>();
-            v.spacing = 4;
-            v.childControlWidth = true;
-            v.childControlHeight = true;
-            v.childForceExpandWidth = true;
-            var wrapLe = wrap.GetComponent<LayoutElement>();
-            wrapLe.preferredHeight = 64;
-            wrapLe.minHeight = 64;
-            wrapLe.flexibleWidth = 1f;
-
-            AddLabel(wrap.transform, title, 13, FontStyles.Normal, new Color(1, 1, 1, 0.78f), 18, TextAlignmentOptions.Left);
-
-            var fieldGo = new GameObject(title, typeof(RectTransform), typeof(Image), typeof(TMP_InputField), typeof(LayoutElement));
-            fieldGo.transform.SetParent(wrap.transform, false);
+            var fieldGo = new GameObject(placeholder, typeof(RectTransform), typeof(Image), typeof(TMP_InputField), typeof(LayoutElement));
+            fieldGo.transform.SetParent(parent, false);
             var fieldImg = fieldGo.GetComponent<Image>();
-            fieldImg.color = new Color(1f, 1f, 1f, 0.12f);
-            ApplyRounded(fieldImg, large: false);
-            fieldGo.GetComponent<LayoutElement>().preferredHeight = 38;
-            fieldGo.GetComponent<LayoutElement>().minHeight = 38;
+            fieldImg.color = FieldBg;
+            ApplyRounded(fieldImg, RoundSprite(128, 28), 1.35f);
+            var outline = fieldGo.AddComponent<Outline>();
+            outline.effectColor = FieldBorder;
+            outline.effectDistance = new Vector2(1.2f, -1.2f);
+
+            var le = fieldGo.GetComponent<LayoutElement>();
+            le.preferredHeight = 54;
+            le.minHeight = 54;
+            le.flexibleWidth = 1f;
+
+            var iconGo = new GameObject("Icon", typeof(RectTransform), typeof(Image));
+            iconGo.transform.SetParent(fieldGo.transform, false);
+            var icon = iconGo.GetComponent<Image>();
+            icon.sprite = BuildIconSprite(iconKind);
+            icon.color = Muted;
+            icon.preserveAspect = true;
+            icon.raycastTarget = false;
+            var iconRt = icon.rectTransform;
+            iconRt.anchorMin = new Vector2(0, 0.5f);
+            iconRt.anchorMax = new Vector2(0, 0.5f);
+            iconRt.pivot = new Vector2(0.5f, 0.5f);
+            iconRt.sizeDelta = new Vector2(22, 22);
+            iconRt.anchoredPosition = new Vector2(28, 0);
+
+            float rightPad = password ? 48f : 14f;
 
             var textArea = new GameObject("Text Area", typeof(RectTransform), typeof(RectMask2D));
             textArea.transform.SetParent(fieldGo.transform, false);
             var areaRt = textArea.GetComponent<RectTransform>();
             StretchFull(areaRt);
-            areaRt.offsetMin = new Vector2(14, 6);
-            areaRt.offsetMax = new Vector2(-14, -6);
+            areaRt.offsetMin = new Vector2(48, 10);
+            areaRt.offsetMax = new Vector2(-rightPad, -10);
 
             var textGo = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
             textGo.transform.SetParent(textArea.transform, false);
             var text = textGo.GetComponent<TextMeshProUGUI>();
             text.font = GetTmpFont();
             text.fontSize = 16;
-            text.color = Color.white;
+            text.color = Navy;
             text.alignment = TextAlignmentOptions.MidlineLeft;
             text.enableWordWrapping = false;
             text.overflowMode = TextOverflowModes.Ellipsis;
@@ -485,9 +694,9 @@ namespace Empathia
             var ph = phGo.GetComponent<TextMeshProUGUI>();
             ph.font = GetTmpFont();
             ph.fontSize = 16;
-            ph.fontStyle = FontStyles.Italic;
-            ph.color = new Color(1, 1, 1, 0.35f);
-            ph.text = title;
+            ph.fontStyle = FontStyles.Normal;
+            ph.color = new Color(Muted.r, Muted.g, Muted.b, 0.85f);
+            ph.text = placeholder;
             ph.alignment = TextAlignmentOptions.MidlineLeft;
             StretchFull(ph.rectTransform);
 
@@ -498,36 +707,127 @@ namespace Empathia
             input.fontAsset = GetTmpFont();
             input.pointSize = 16;
             input.text = value ?? "";
-            input.caretColor = Color.white;
-            input.selectionColor = new Color(0.3f, 0.6f, 1f, 0.35f);
+            input.caretColor = Purple;
+            input.selectionColor = new Color(Purple.r, Purple.g, Purple.b, 0.25f);
+            if (password)
+            {
+                input.contentType = TMP_InputField.ContentType.Password;
+                _eyeBtn = AddEyeToggle(fieldGo.transform, input);
+            }
             return input;
         }
 
-        Transform AddRow(Transform parent)
+        Button AddEyeToggle(Transform parent, TMP_InputField input)
+        {
+            var go = new GameObject("Eye", typeof(RectTransform), typeof(Image), typeof(Button));
+            go.transform.SetParent(parent, false);
+            var img = go.GetComponent<Image>();
+            img.color = new Color(1, 1, 1, 0.01f);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(1, 0);
+            rt.anchorMax = new Vector2(1, 1);
+            rt.pivot = new Vector2(1, 0.5f);
+            rt.sizeDelta = new Vector2(44, 0);
+            rt.anchoredPosition = new Vector2(-4, 0);
+
+            var eyeImgGo = new GameObject("EyeIcon", typeof(RectTransform), typeof(Image));
+            eyeImgGo.transform.SetParent(go.transform, false);
+            var eyeImg = eyeImgGo.GetComponent<Image>();
+            eyeImg.sprite = BuildIconSprite("eye");
+            eyeImg.color = Muted;
+            eyeImg.preserveAspect = true;
+            eyeImg.raycastTarget = false;
+            var eyeRt = eyeImg.rectTransform;
+            eyeRt.anchorMin = eyeRt.anchorMax = new Vector2(0.5f, 0.5f);
+            eyeRt.sizeDelta = new Vector2(22, 22);
+
+            var btn = go.GetComponent<Button>();
+            btn.targetGraphic = img;
+            btn.onClick.AddListener(() =>
+            {
+                _showPass = !_showPass;
+                input.contentType = _showPass
+                    ? TMP_InputField.ContentType.Standard
+                    : TMP_InputField.ContentType.Password;
+                input.ForceLabelUpdate();
+                eyeImg.color = _showPass ? Purple : Muted;
+            });
+            return btn;
+        }
+
+        TMP_InputField AddCompactInput(Transform parent, string placeholder, string value)
+        {
+            var fieldGo = new GameObject(placeholder, typeof(RectTransform), typeof(Image), typeof(TMP_InputField), typeof(LayoutElement));
+            fieldGo.transform.SetParent(parent, false);
+            var fieldImg = fieldGo.GetComponent<Image>();
+            fieldImg.color = FieldBg;
+            ApplyRounded(fieldImg, RoundSprite(128, 28), 1.4f);
+            fieldGo.GetComponent<LayoutElement>().preferredHeight = 36;
+            fieldGo.GetComponent<LayoutElement>().minHeight = 36;
+
+            var textArea = new GameObject("Text Area", typeof(RectTransform), typeof(RectMask2D));
+            textArea.transform.SetParent(fieldGo.transform, false);
+            var areaRt = textArea.GetComponent<RectTransform>();
+            StretchFull(areaRt);
+            areaRt.offsetMin = new Vector2(12, 6);
+            areaRt.offsetMax = new Vector2(-12, -6);
+
+            var textGo = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
+            textGo.transform.SetParent(textArea.transform, false);
+            var text = textGo.GetComponent<TextMeshProUGUI>();
+            text.font = GetTmpFont();
+            text.fontSize = 13;
+            text.color = Navy;
+            text.alignment = TextAlignmentOptions.MidlineLeft;
+            text.enableWordWrapping = false;
+            StretchFull(text.rectTransform);
+
+            var phGo = new GameObject("Placeholder", typeof(RectTransform), typeof(TextMeshProUGUI));
+            phGo.transform.SetParent(textArea.transform, false);
+            var ph = phGo.GetComponent<TextMeshProUGUI>();
+            ph.font = GetTmpFont();
+            ph.fontSize = 13;
+            ph.color = Muted;
+            ph.text = placeholder;
+            ph.alignment = TextAlignmentOptions.MidlineLeft;
+            StretchFull(ph.rectTransform);
+
+            var input = fieldGo.GetComponent<TMP_InputField>();
+            input.textViewport = areaRt;
+            input.textComponent = text;
+            input.placeholder = ph;
+            input.fontAsset = GetTmpFont();
+            input.pointSize = 13;
+            input.text = value ?? "";
+            return input;
+        }
+
+        Transform AddRow(Transform parent, float height)
         {
             var go = new GameObject("Row", typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
             go.transform.SetParent(parent, false);
             var h = go.GetComponent<HorizontalLayoutGroup>();
-            h.spacing = 10;
+            h.spacing = 8;
             h.childAlignment = TextAnchor.MiddleCenter;
             h.childForceExpandWidth = true;
             h.childForceExpandHeight = true;
             h.childControlWidth = true;
             h.childControlHeight = true;
             var le = go.GetComponent<LayoutElement>();
-            le.preferredHeight = 42;
-            le.minHeight = 42;
-            le.flexibleWidth = 1f;
+            le.preferredHeight = height;
+            le.minHeight = height;
             return go.transform;
         }
 
-        Button AddButton(Transform parent, string label, Color color, float height, UnityEngine.Events.UnityAction onClick)
+        Button AddGradientButton(Transform parent, string label, float height, UnityEngine.Events.UnityAction onClick, float fontSize = 20f)
         {
             var go = new GameObject(label, typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
             go.transform.SetParent(parent, false);
             var img = go.GetComponent<Image>();
-            img.color = color;
-            ApplyRounded(img, large: false);
+            img.sprite = GradientButtonSprite();
+            img.type = Image.Type.Sliced;
+            img.color = Color.white;
+            img.pixelsPerUnitMultiplier = 1.05f;
             var le = go.GetComponent<LayoutElement>();
             le.preferredHeight = height;
             le.minHeight = height;
@@ -538,17 +838,80 @@ namespace Empathia
             var t = textGo.GetComponent<TextMeshProUGUI>();
             t.text = label;
             t.font = GetTmpFont();
-            t.fontSize = 16;
+            t.fontSize = fontSize;
+            t.fontStyle = FontStyles.Bold;
+            t.alignment = TextAlignmentOptions.Center;
+            t.color = Color.white;
+            t.raycastTarget = false;
+            StretchFull(t.rectTransform);
+
+            var btn = go.GetComponent<Button>();
+            btn.targetGraphic = img;
+            var colors = btn.colors;
+            colors.highlightedColor = new Color(0.95f, 0.95f, 1f, 1f);
+            colors.pressedColor = new Color(0.85f, 0.85f, 0.95f, 1f);
+            btn.colors = colors;
+            btn.onClick.AddListener(onClick);
+            return btn;
+        }
+
+        Button AddOutlineButton(Transform parent, string label, float height, UnityEngine.Events.UnityAction onClick)
+        {
+            var go = new GameObject(label, typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
+            go.transform.SetParent(parent, false);
+            var img = go.GetComponent<Image>();
+            img.color = Color.white;
+            ApplyRounded(img, RoundSprite(128, 48), 1.15f);
+            var outline = go.AddComponent<Outline>();
+            outline.effectColor = new Color(0.62f, 0.45f, 0.95f, 1f);
+            outline.effectDistance = new Vector2(1.6f, -1.6f);
+            var le = go.GetComponent<LayoutElement>();
+            le.preferredHeight = height;
+            le.minHeight = height;
+
+            var textGo = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
+            textGo.transform.SetParent(go.transform, false);
+            var t = textGo.GetComponent<TextMeshProUGUI>();
+            t.text = label;
+            t.font = GetTmpFont();
+            t.fontSize = 17;
+            t.fontStyle = FontStyles.Bold;
+            t.alignment = TextAlignmentOptions.Center;
+            t.color = Purple;
+            t.raycastTarget = false;
+            StretchFull(t.rectTransform);
+
+            var btn = go.GetComponent<Button>();
+            btn.targetGraphic = img;
+            btn.onClick.AddListener(onClick);
+            return btn;
+        }
+
+        Button AddSmallButton(Transform parent, string label, Color color, UnityEngine.Events.UnityAction onClick)
+        {
+            var go = new GameObject(label, typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
+            go.transform.SetParent(parent, false);
+            var img = go.GetComponent<Image>();
+            img.color = color;
+            ApplyRounded(img, RoundSprite(128, 28), 1.3f);
+            go.GetComponent<LayoutElement>().flexibleWidth = 1f;
+
+            var textGo = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
+            textGo.transform.SetParent(go.transform, false);
+            var t = textGo.GetComponent<TextMeshProUGUI>();
+            t.text = label;
+            t.font = GetTmpFont();
+            t.fontSize = 13;
             t.fontStyle = FontStyles.Bold;
             t.alignment = TextAlignmentOptions.Center;
             t.color = Color.white;
             t.enableAutoSizing = true;
-            t.fontSizeMin = 11;
-            t.fontSizeMax = 16;
+            t.fontSizeMin = 10;
+            t.fontSizeMax = 13;
             t.raycastTarget = false;
             StretchFull(t.rectTransform);
-            t.rectTransform.offsetMin = new Vector2(10, 4);
-            t.rectTransform.offsetMax = new Vector2(-10, -4);
+            t.rectTransform.offsetMin = new Vector2(4, 2);
+            t.rectTransform.offsetMax = new Vector2(-4, -2);
 
             var btn = go.GetComponent<Button>();
             btn.targetGraphic = img;
@@ -558,95 +921,142 @@ namespace Empathia
 
         void OnLogin()
         {
-            if (_busy)
-                return;
+            if (_busy) return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
                 ? "http://192.168.1.78:8000/api/v1"
                 : _baseUrl.text.Trim();
 
             SetBusy(true);
-            SetState("processing");
-            SetStatus("Autenticando contra B…");
+            SetLoginStatus("Autenticando contra B…");
             StartCoroutine(_api.Login(_user.text.Trim(), _pass.text, (ok, msg) =>
             {
                 SetBusy(false);
-                SetState("idle");
-                SetStatus(ok
-                    ? "Login OK\nUsuario: " + EmpathiaAuthState.Username + "\nToken: " + EmpathiaAuthState.TokenPreview
-                    : "Error de autenticación:\n" + msg);
-                Debug.Log(ok ? "[Empathia] " + msg : "[Empathia] ERROR " + msg);
-            }));
-        }
-
-        void OnCreateSession()
-        {
-            if (_busy)
-                return;
-            SetBusy(true);
-            SetState("processing");
-            SetStatus("Creando sesión…");
-            StartCoroutine(_api.CreateSession((ok, msg) =>
-            {
-                SetBusy(false);
-                SetState("idle");
-                SetStatus(ok ? msg : "Error: " + msg);
-            }));
-        }
-
-        void OnCloseSession()
-        {
-            if (_busy)
-                return;
-            SetBusy(true);
-            SetState("processing");
-            SetStatus("Cerrando sesión…");
-            StartCoroutine(_api.CloseSession((ok, msg) =>
-            {
-                SetBusy(false);
-                SetState("idle");
-                SetStatus(ok ? msg : "Error: " + msg);
-            }));
-        }
-
-        IEnumerator RunTurn(bool useMic)
-        {
-            SetBusy(true);
-            SetReply("(esperando…)");
-            byte[] wav = null;
-
-            if (useMic)
-            {
-                SetState("listening");
-                SetStatus("Grabando micrófono…");
-                yield return CaptureMic(bytes => wav = bytes);
-                if (wav == null)
+                if (ok)
                 {
-                    SetBusy(false);
-                    SetState("idle");
-                    SetStatus("No se pudo grabar mic. Usa Turno WAV.");
-                    yield break;
+                    SetLoginStatus("Login OK. Confirma para continuar.");
+                    ShowScreen(UiScreen.Confirm);
+                    Debug.Log("[Empathia] " + msg);
                 }
-            }
-            else
+                else
+                {
+                    SetLoginStatus("Error: " + msg);
+                    Debug.Log("[Empathia] ERROR " + msg);
+                }
+            }));
+        }
+
+        IEnumerator RecordAudioTurn()
+        {
+            if (_busy || _recording) yield break;
+
+            // 1) Empieza a grabar YA y deja el botón en "Detener audio"
+            if (Microphone.devices == null || Microphone.devices.Length == 0)
             {
-                SetState("listening");
-                SetStatus("Generando WAV de prueba…");
-                wav = EmpathiaWav.BuildSilentWav();
+                SetRecordButtonUi(false);
+                SetState("idle");
+                SetReply("(error)");
+                SetStatus("No se encontró micrófono.");
+                yield break;
+            }
+
+            _micDevice = Microphone.devices[0];
+            _stopRecording = false;
+            _micClip = Microphone.Start(_micDevice, false, MaxMicSeconds, MicSampleRate);
+            if (_micClip == null)
+            {
+                SetRecordButtonUi(false);
+                SetState("idle");
+                SetReply("(error)");
+                SetStatus("No se pudo iniciar la grabación.");
+                yield break;
+            }
+
+            var t0 = Time.realtimeSinceStartup;
+            while (Microphone.GetPosition(_micDevice) <= 0 && Time.realtimeSinceStartup - t0 < 2f)
+                yield return null;
+
+            _recording = true;
+            _busy = false;
+            if (_recordBtn != null) _recordBtn.interactable = true;
+            SetRecordButtonUi(true);
+            SetState("listening");
+            SetReply("(grabando…)");
+
+            var started = Time.realtimeSinceStartup;
+            while (!_stopRecording)
+            {
+                var elapsed = Time.realtimeSinceStartup - started;
+                if (elapsed >= MaxMicSeconds - 0.25f)
+                {
+                    SetStatus("Tiempo máximo alcanzado. Deteniendo…");
+                    break;
+                }
+
+                SetStatus("Grabando… " + elapsed.ToString("0") + " s — toca Detener audio");
                 yield return null;
             }
 
+            var samples = Mathf.Max(1, Microphone.GetPosition(_micDevice));
+            if (Microphone.IsRecording(_micDevice))
+                Microphone.End(_micDevice);
+
+            _recording = false;
+            _stopRecording = false;
+            SetRecordButtonUi(false);
+            SetBusy(true);
+
+            var wav = EmpathiaWav.FromMicrophoneClip(_micClip, samples, MicSampleRate);
+            if (_micClip != null)
+            {
+                Destroy(_micClip);
+                _micClip = null;
+            }
+            _micDevice = null;
+
+            if (wav == null || wav.Length < 100)
+            {
+                SetBusy(false);
+                SetState("idle");
+                SetReply("(error)");
+                SetStatus("Grabación demasiado corta. Intenta de nuevo.");
+                yield break;
+            }
+
+            // 2) Tras detener: asegura sesión y envía
+            if (!EmpathiaAuthState.HasSession)
+            {
+                SetState("processing");
+                SetStatus("Preparando sesión…");
+                var sessionOk = false;
+                var sessionMsg = "";
+                yield return _api.CreateSession((ok, msg) =>
+                {
+                    sessionOk = ok;
+                    sessionMsg = msg;
+                });
+                if (!sessionOk)
+                {
+                    SetBusy(false);
+                    SetState("idle");
+                    SetReply("(error)");
+                    SetStatus("Error al crear sesión: " + sessionMsg);
+                    yield break;
+                }
+            }
+
             SetState("processing");
+            SetStatus("Enviando audio…");
             TurnResultInfo result = null;
-            var ok = false;
+            var okTurn = false;
             var msg = "";
             yield return _api.RunTurn(wav, SetStatus, (success, info, message) =>
             {
-                ok = success;
+                okTurn = success;
                 result = info;
                 msg = message;
             });
 
-            if (!ok || result == null)
+            if (!okTurn || result == null)
             {
                 SetBusy(false);
                 SetState("idle");
@@ -664,42 +1074,22 @@ namespace Empathia
                 ttsOk = s;
                 ttsMsg = m;
             });
-            SetStatus((ttsOk ? ttsMsg : "Error TTS: " + ttsMsg) + "\n" + result.ReplyText);
+            SetStatus(ttsOk ? "Audio listo · " + ttsMsg : "Error TTS: " + ttsMsg);
             if (ttsOk && _audio.clip != null)
                 yield return new WaitForSeconds(_audio.clip.length + 0.1f);
             SetBusy(false);
             SetState("idle");
         }
 
-        IEnumerator CaptureMic(System.Action<byte[]> done)
-        {
-            if (Microphone.devices == null || Microphone.devices.Length == 0)
-            {
-                done(null);
-                yield break;
-            }
-
-            var device = Microphone.devices[0];
-            var clip = Microphone.Start(device, false, Mathf.CeilToInt(MicSeconds) + 1, 16000);
-            var t0 = Time.realtimeSinceStartup;
-            while (Microphone.GetPosition(device) <= 0 && Time.realtimeSinceStartup - t0 < 2f)
-                yield return null;
-            yield return new WaitForSeconds(MicSeconds);
-            Microphone.End(device);
-            var bytes = EmpathiaWav.FromMicrophoneClip(clip);
-            if (clip != null)
-                Destroy(clip);
-            done(bytes);
-        }
-
         void SetBusy(bool busy)
         {
             _busy = busy;
             if (_loginBtn != null) _loginBtn.interactable = !busy;
-            if (_sessionBtn != null) _sessionBtn.interactable = !busy;
-            if (_closeBtn != null) _closeBtn.interactable = !busy;
-            if (_turnWavBtn != null) _turnWavBtn.interactable = !busy;
-            if (_turnMicBtn != null) _turnMicBtn.interactable = !busy;
+            if (_registerBtn != null) _registerBtn.interactable = !busy;
+            if (_confirmBtn != null) _confirmBtn.interactable = !busy;
+            // Durante grabación el botón debe seguir activo para el 2.º toque
+            if (_recordBtn != null)
+                _recordBtn.interactable = _recording || !busy;
         }
 
         void SetState(string s)
@@ -712,6 +1102,12 @@ namespace Empathia
         {
             if (_status != null)
                 _status.text = s;
+        }
+
+        void SetLoginStatus(string s)
+        {
+            if (_loginStatus != null)
+                _loginStatus.text = s ?? "";
         }
 
         void SetReply(string s)

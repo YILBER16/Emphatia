@@ -108,10 +108,15 @@ class EmpathiaController extends Controller
             ], 403);
         }
 
-        $active = AccompanimentSession::query()->where('status', 'active')->exists();
+        $active = AccompanimentSession::query()->where('status', 'active')->first();
         if ($active) {
+            // Incluye session.id para que A pueda reutilizarla (Unity no tiene listado).
             return response()->json([
                 'error' => ['code' => 'SESSION_ALREADY_ACTIVE', 'message' => 'Only one active session allowed on this node'],
+                'session' => [
+                    'id' => $active->id,
+                    'status' => $active->status,
+                ],
             ], 409);
         }
 

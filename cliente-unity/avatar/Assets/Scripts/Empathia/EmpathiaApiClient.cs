@@ -61,8 +61,16 @@ namespace Empathia
                 EmpathiaAuthState.Token,
                 (ok, code, text) =>
                 {
+                    // Si ya hay sesión activa, B puede devolver el id para reutilizarla.
                     if (!ok)
                     {
+                        var adopted = TryAdoptSessionFromBody(text);
+                        if (adopted)
+                        {
+                            onDone(true, "Sesión activa reutilizada. Id: " + EmpathiaAuthState.SessionId);
+                            return;
+                        }
+
                         onDone(false, MapError(code, text, "No se pudo crear la sesión."));
                         return;
                     }
@@ -77,6 +85,24 @@ namespace Empathia
                     EmpathiaAuthState.SessionId = parsed.session.id;
                     onDone(true, "Sesión creada. Id: " + EmpathiaAuthState.SessionId);
                 });
+        }
+
+        static bool TryAdoptSessionFromBody(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return false;
+            try
+            {
+                var parsed = JsonUtility.FromJson<CreateSessionResponse>(text);
+                if (parsed?.session == null || string.IsNullOrEmpty(parsed.session.id))
+                    return false;
+                EmpathiaAuthState.SessionId = parsed.session.id;
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         public IEnumerator CloseSession(Action<bool, string> onDone)
