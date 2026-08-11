@@ -9,11 +9,13 @@ using UnityEngine.InputSystem.UI;
 namespace Empathia
 {
     /// <summary>
-    /// Login A: UI uGUI (Canvas) visible en la pestaña Game durante Play.
+    /// Login A: UI responsiva (adapta tarjeta, tipografía y filas a ancho/alto).
+    /// Visible en la pestaña Game durante Play.
     /// </summary>
     public class LoginScreenController : MonoBehaviour
     {
         const float MicSeconds = 3f;
+        const float NarrowBreakpoint = 700f;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Bootstrap()
@@ -32,12 +34,26 @@ namespace Empathia
         AudioSource _audio;
         Font _font;
 
+        RectTransform _cardRt;
+        RectTransform _contentRt;
+        VerticalLayoutGroup _contentLayout;
+        LayoutElement _cardLayout;
+        CanvasScaler _scaler;
+        Transform _row1;
+        Transform _row2;
+        HorizontalLayoutGroup _row1Layout;
+        HorizontalLayoutGroup _row2Layout;
+
         InputField _baseUrl;
         InputField _user;
         InputField _pass;
+        Text _brand;
+        Text _title;
+        Text _subtitle;
         Text _status;
         Text _state;
         Text _reply;
+        Text _sep;
         Button _loginBtn;
         Button _sessionBtn;
         Button _closeBtn;
@@ -45,6 +61,8 @@ namespace Empathia
         Button _turnMicBtn;
         bool _busy;
         bool _built;
+        Vector2 _lastScreen;
+        bool _narrow;
 
         void Awake()
         {
@@ -54,13 +72,23 @@ namespace Empathia
                 _audio = GetComponent<AudioSource>() ?? gameObject.AddComponent<AudioSource>();
                 EnsureEventSystem();
                 BuildUi();
-                SetStatus("Listo. Abre la pestaña GAME y usa Iniciar sesión.\nLab: estudiante1 / password");
-                Debug.Log("[Empathia] UI de login lista. Mira la pestaña Game (no Scene).");
+                ApplyResponsiveLayout(force: true);
+                SetStatus("Sesión/login listos para probar.\nServidor B por defecto: 192.168.1.78:8000\nLab: estudiante1 / password");
+                Debug.Log("[Empathia] UI responsiva lista. Usa pestaña Game + Play (Ctrl+P).");
             }
             catch (System.Exception ex)
             {
                 Debug.LogError("[Empathia] Error creando UI: " + ex);
             }
+        }
+
+        void Update()
+        {
+            if (!_built)
+                return;
+            var size = new Vector2(Screen.width, Screen.height);
+            if (size != _lastScreen)
+                ApplyResponsiveLayout(force: false);
         }
 
         void EnsureEventSystem()
@@ -102,51 +130,192 @@ namespace Empathia
             var canvas = canvasGo.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 1000;
-            var scaler = canvasGo.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1280, 720);
+            _scaler = canvasGo.AddComponent<CanvasScaler>();
+            _scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            _scaler.referenceResolution = new Vector2(1920, 1080);
+            _scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+            _scaler.matchWidthOrHeight = 0.5f;
             canvasGo.AddComponent<GraphicRaycaster>();
 
             var bg = CreateImage(canvasGo.transform, "BG", new Color(0.07f, 0.1f, 0.14f, 1f));
             StretchFull(bg.rectTransform);
 
-            var card = CreateImage(canvasGo.transform, "Card", new Color(0.14f, 0.18f, 0.24f, 1f));
-            var cardRt = card.rectTransform;
-            cardRt.anchorMin = cardRt.anchorMax = cardRt.pivot = new Vector2(0.5f, 0.5f);
-            cardRt.sizeDelta = new Vector2(480, 580);
+            // Contenedor seguro (márgenes % de pantalla)
+            var safe = new GameObject("SafeArea", typeof(RectTransform));
+            safe.transform.SetParent(canvasGo.transform, false);
+            var safeRt = safe.GetComponent<RectTransform>();
+            StretchFull(safeRt);
 
-            var layout = card.gameObject.AddComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(28, 28, 24, 24);
-            layout.spacing = 8;
-            layout.childControlWidth = true;
-            layout.childControlHeight = false;
-            layout.childForceExpandWidth = true;
-            layout.childForceExpandHeight = false;
+            var card = CreateImage(safe.transform, "Card", new Color(0.14f, 0.18f, 0.24f, 0.98f));
+            _cardRt = card.rectTransform;
+            _cardRt.anchorMin = _cardRt.anchorMax = _cardRt.pivot = new Vector2(0.5f, 0.5f);
+            _cardLayout = card.gameObject.AddComponent<LayoutElement>();
 
-            AddLabel(card.transform, "EmpathIA", 30, FontStyle.Bold, new Color(0.55f, 0.85f, 1f), 36);
-            AddLabel(card.transform, "Inicio de sesión", 22, FontStyle.Bold, Color.white, 30);
-            AddLabel(card.transform, "Autenticación contra servidor B", 13, FontStyle.Normal, new Color(1, 1, 1, 0.7f), 22);
+            // Scroll interno para pantallas bajas
+            var scrollGo = new GameObject("Scroll", typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(RectMask2D));
+            scrollGo.transform.SetParent(card.transform, false);
+            var scrollImg = scrollGo.GetComponent<Image>();
+            scrollImg.color = new Color(0, 0, 0, 0.01f);
+            var scrollRt = scrollGo.GetComponent<RectTransform>();
+            StretchFull(scrollRt);
+            scrollRt.offsetMin = new Vector2(12, 12);
+            scrollRt.offsetMax = new Vector2(-12, -12);
 
-            _baseUrl = AddInput(card.transform, "Servidor", EmpathiaAuthState.BaseUrl);
-            _user = AddInput(card.transform, "Usuario", "estudiante1");
-            _pass = AddInput(card.transform, "Contraseña", "password");
+            var content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            content.transform.SetParent(scrollGo.transform, false);
+            _contentRt = content.GetComponent<RectTransform>();
+            _contentRt.anchorMin = new Vector2(0, 1);
+            _contentRt.anchorMax = new Vector2(1, 1);
+            _contentRt.pivot = new Vector2(0.5f, 1);
+            _contentRt.anchoredPosition = Vector2.zero;
+            _contentRt.sizeDelta = new Vector2(0, 0);
+
+            _contentLayout = content.GetComponent<VerticalLayoutGroup>();
+            _contentLayout.padding = new RectOffset(20, 20, 16, 16);
+            _contentLayout.spacing = 8;
+            _contentLayout.childAlignment = TextAnchor.UpperCenter;
+            _contentLayout.childControlWidth = true;
+            _contentLayout.childControlHeight = false;
+            _contentLayout.childForceExpandWidth = true;
+            _contentLayout.childForceExpandHeight = false;
+
+            var fitter = content.GetComponent<ContentSizeFitter>();
+            fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var scroll = scrollGo.GetComponent<ScrollRect>();
+            scroll.content = _contentRt;
+            scroll.horizontal = false;
+            scroll.vertical = true;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+            scroll.scrollSensitivity = 30f;
+
+            _brand = AddLabel(_contentRt, "EmpathIA", 32, FontStyle.Bold, new Color(0.55f, 0.85f, 1f), 40, TextAnchor.MiddleCenter);
+            _title = AddLabel(_contentRt, "Inicio de sesión", 24, FontStyle.Bold, Color.white, 34, TextAnchor.MiddleCenter);
+            _subtitle = AddLabel(_contentRt, "Autenticación contra servidor B", 14, FontStyle.Normal, new Color(1, 1, 1, 0.7f), 24, TextAnchor.MiddleCenter);
+
+            _baseUrl = AddInput(_contentRt, "Servidor", EmpathiaAuthState.BaseUrl);
+            _user = AddInput(_contentRt, "Usuario", "estudiante1");
+            _pass = AddInput(_contentRt, "Contraseña", "password");
             _pass.contentType = InputField.ContentType.Password;
 
-            _loginBtn = AddButton(card.transform, "Iniciar sesión", new Color(0.16f, 0.65f, 0.45f), 44, OnLogin);
-            _state = AddLabel(card.transform, "Estado UI: idle", 14, FontStyle.Bold, Color.white, 22);
-            _status = AddLabel(card.transform, "", 13, FontStyle.Normal, new Color(0.9f, 0.92f, 0.95f), 70);
+            _loginBtn = AddButton(_contentRt, "Iniciar sesión", new Color(0.16f, 0.65f, 0.45f), 46, OnLogin);
+            _state = AddLabel(_contentRt, "Estado UI: idle", 14, FontStyle.Bold, Color.white, 24, TextAnchor.MiddleLeft);
+            _status = AddLabel(_contentRt, "", 13, FontStyle.Normal, new Color(0.9f, 0.92f, 0.95f), 88, TextAnchor.UpperLeft);
 
-            AddLabel(card.transform, "── Después del login ──", 12, FontStyle.Italic, new Color(1, 1, 1, 0.45f), 20);
+            _sep = AddLabel(_contentRt, "── Después del login ──", 12, FontStyle.Italic, new Color(1, 1, 1, 0.45f), 22, TextAnchor.MiddleCenter);
 
-            var row1 = AddRow(card.transform);
-            _sessionBtn = AddButton(row1, "Crear sesión", new Color(0.22f, 0.48f, 0.78f), 36, OnCreateSession);
-            _closeBtn = AddButton(row1, "Cerrar sesión", new Color(0.22f, 0.48f, 0.78f), 36, OnCloseSession);
+            _row1 = AddRow(_contentRt);
+            _row1Layout = _row1.GetComponent<HorizontalLayoutGroup>();
+            _sessionBtn = AddButton(_row1, "Crear sesión", new Color(0.22f, 0.48f, 0.78f), 38, OnCreateSession);
+            _closeBtn = AddButton(_row1, "Cerrar sesión", new Color(0.22f, 0.48f, 0.78f), 38, OnCloseSession);
 
-            var row2 = AddRow(card.transform);
-            _turnWavBtn = AddButton(row2, "Turno WAV", new Color(0.22f, 0.48f, 0.78f), 36, () => StartCoroutine(RunTurn(false)));
-            _turnMicBtn = AddButton(row2, "Turno mic 3s", new Color(0.22f, 0.48f, 0.78f), 36, () => StartCoroutine(RunTurn(true)));
+            _row2 = AddRow(_contentRt);
+            _row2Layout = _row2.GetComponent<HorizontalLayoutGroup>();
+            _turnWavBtn = AddButton(_row2, "Turno WAV", new Color(0.22f, 0.48f, 0.78f), 38, () => StartCoroutine(RunTurn(false)));
+            _turnMicBtn = AddButton(_row2, "Turno mic 3s", new Color(0.22f, 0.48f, 0.78f), 38, () => StartCoroutine(RunTurn(true)));
 
-            _reply = AddLabel(card.transform, "Respuesta: (sin respuesta)", 13, FontStyle.Normal, new Color(0.75f, 0.95f, 0.8f), 40);
+            _reply = AddLabel(_contentRt, "Respuesta: (sin respuesta)", 13, FontStyle.Normal, new Color(0.75f, 0.95f, 0.8f), 48, TextAnchor.UpperLeft);
+        }
+
+        void ApplyResponsiveLayout(bool force)
+        {
+            _lastScreen = new Vector2(Screen.width, Screen.height);
+            if (_scaler == null || _cardRt == null)
+                return;
+
+            var aspect = Screen.width / Mathf.Max(1f, (float)Screen.height);
+            // Más ancho → priorizar altura; más alto/estrecho → priorizar ancho
+            _scaler.matchWidthOrHeight = aspect >= 1.2f ? 0.35f : 0.65f;
+
+            var refW = _scaler.referenceResolution.x;
+            var scale = Mathf.Lerp(Screen.width / refW, Screen.height / _scaler.referenceResolution.y, _scaler.matchWidthOrHeight);
+            var canvasW = Screen.width / Mathf.Max(0.01f, scale);
+            var canvasH = Screen.height / Mathf.Max(0.01f, scale);
+
+            var narrow = canvasW < NarrowBreakpoint;
+            if (!force && narrow == _narrow)
+            {
+                // Solo recalcular tamaño de tarjeta
+            }
+            _narrow = narrow;
+
+            var marginX = narrow ? canvasW * 0.04f : canvasW * 0.08f;
+            var marginY = narrow ? canvasH * 0.03f : canvasH * 0.06f;
+            var cardW = Mathf.Clamp(canvasW - marginX * 2f, 320f, 560f);
+            var cardH = Mathf.Clamp(canvasH - marginY * 2f, 420f, 760f);
+
+            _cardRt.sizeDelta = new Vector2(cardW, cardH);
+            if (_cardLayout != null)
+            {
+                _cardLayout.preferredWidth = cardW;
+                _cardLayout.preferredHeight = cardH;
+            }
+
+            if (_contentLayout != null)
+            {
+                var pad = narrow ? 14 : 22;
+                _contentLayout.padding = new RectOffset(pad, pad, pad, pad);
+                _contentLayout.spacing = narrow ? 6 : 10;
+            }
+
+            // Filas: en pantallas estrechas apilar botones
+            ConfigureRow(_row1Layout, _row1, narrow);
+            ConfigureRow(_row2Layout, _row2, narrow);
+
+            SetTextSize(_brand, narrow ? 26 : 32);
+            SetTextSize(_title, narrow ? 20 : 24);
+            SetTextSize(_subtitle, narrow ? 12 : 14);
+            SetTextSize(_status, narrow ? 12 : 13);
+            SetTextSize(_reply, narrow ? 12 : 13);
+
+            Canvas.ForceUpdateCanvases();
+            LayoutRebuilder.ForceRebuildLayoutImmediate(_contentRt);
+        }
+
+        static void ConfigureRow(HorizontalLayoutGroup h, Transform row, bool narrow)
+        {
+            if (h == null || row == null)
+                return;
+
+            // HorizontalLayoutGroup no apila; cambiamos preferredHeight del row y usamos
+            // childForceExpand. Para apilar de verdad, usamos VerticalLayoutGroup swap.
+            var vertical = row.GetComponent<VerticalLayoutGroup>();
+            var le = row.GetComponent<LayoutElement>();
+
+            if (narrow)
+            {
+                h.enabled = false;
+                if (vertical == null)
+                {
+                    vertical = row.gameObject.AddComponent<VerticalLayoutGroup>();
+                    vertical.spacing = 8;
+                    vertical.childForceExpandWidth = true;
+                    vertical.childForceExpandHeight = false;
+                    vertical.childControlWidth = true;
+                    vertical.childControlHeight = false;
+                }
+                vertical.enabled = true;
+                if (le != null)
+                    le.preferredHeight = 86;
+            }
+            else
+            {
+                if (vertical != null)
+                    vertical.enabled = false;
+                h.enabled = true;
+                h.spacing = 8;
+                h.childForceExpandWidth = true;
+                h.childForceExpandHeight = true;
+                if (le != null)
+                    le.preferredHeight = 40;
+            }
+        }
+
+        static void SetTextSize(Text t, int size)
+        {
+            if (t != null)
+                t.fontSize = size;
         }
 
         static Image CreateImage(Transform parent, string name, Color color)
@@ -166,7 +335,7 @@ namespace Empathia
             rt.offsetMax = Vector2.zero;
         }
 
-        Text AddLabel(Transform parent, string text, int size, FontStyle style, Color color, float height)
+        Text AddLabel(Transform parent, string text, int size, FontStyle style, Color color, float height, TextAnchor align)
         {
             var go = new GameObject("Label", typeof(RectTransform), typeof(Text), typeof(LayoutElement));
             go.transform.SetParent(parent, false);
@@ -176,11 +345,13 @@ namespace Empathia
             t.fontSize = size;
             t.fontStyle = style;
             t.color = color;
-            t.alignment = TextAnchor.MiddleLeft;
+            t.alignment = align;
             t.horizontalOverflow = HorizontalWrapMode.Wrap;
             t.verticalOverflow = VerticalWrapMode.Overflow;
-            go.GetComponent<LayoutElement>().preferredHeight = height;
-            go.GetComponent<LayoutElement>().minHeight = height * 0.6f;
+            var le = go.GetComponent<LayoutElement>();
+            le.preferredHeight = height;
+            le.minHeight = height * 0.5f;
+            le.flexibleWidth = 1;
             return t;
         }
 
@@ -192,14 +363,15 @@ namespace Empathia
             v.spacing = 2;
             v.childControlWidth = true;
             v.childForceExpandWidth = true;
-            wrap.GetComponent<LayoutElement>().preferredHeight = 54;
+            wrap.GetComponent<LayoutElement>().preferredHeight = 58;
+            wrap.GetComponent<LayoutElement>().flexibleWidth = 1;
 
-            AddLabel(wrap.transform, title, 12, FontStyle.Normal, new Color(1, 1, 1, 0.75f), 18);
+            AddLabel(wrap.transform, title, 12, FontStyle.Normal, new Color(1, 1, 1, 0.75f), 18, TextAnchor.MiddleLeft);
 
             var fieldGo = new GameObject(title, typeof(RectTransform), typeof(Image), typeof(InputField), typeof(LayoutElement));
             fieldGo.transform.SetParent(wrap.transform, false);
             fieldGo.GetComponent<Image>().color = new Color(1, 1, 1, 0.12f);
-            fieldGo.GetComponent<LayoutElement>().preferredHeight = 30;
+            fieldGo.GetComponent<LayoutElement>().preferredHeight = 34;
 
             var textGo = new GameObject("Text", typeof(RectTransform), typeof(Text));
             textGo.transform.SetParent(fieldGo.transform, false);
@@ -209,8 +381,8 @@ namespace Empathia
             text.color = Color.white;
             text.supportRichText = false;
             StretchFull(text.rectTransform);
-            text.rectTransform.offsetMin = new Vector2(8, 4);
-            text.rectTransform.offsetMax = new Vector2(-8, -4);
+            text.rectTransform.offsetMin = new Vector2(10, 4);
+            text.rectTransform.offsetMax = new Vector2(-10, -4);
 
             var phGo = new GameObject("Placeholder", typeof(RectTransform), typeof(Text));
             phGo.transform.SetParent(fieldGo.transform, false);
@@ -221,8 +393,8 @@ namespace Empathia
             ph.color = new Color(1, 1, 1, 0.35f);
             ph.text = title;
             StretchFull(ph.rectTransform);
-            ph.rectTransform.offsetMin = new Vector2(8, 4);
-            ph.rectTransform.offsetMax = new Vector2(-8, -4);
+            ph.rectTransform.offsetMin = new Vector2(10, 4);
+            ph.rectTransform.offsetMax = new Vector2(-10, -4);
 
             var input = fieldGo.GetComponent<InputField>();
             input.textComponent = text;
@@ -237,9 +409,13 @@ namespace Empathia
             go.transform.SetParent(parent, false);
             var h = go.GetComponent<HorizontalLayoutGroup>();
             h.spacing = 8;
+            h.childAlignment = TextAnchor.MiddleCenter;
             h.childForceExpandWidth = true;
             h.childForceExpandHeight = true;
-            go.GetComponent<LayoutElement>().preferredHeight = 36;
+            h.childControlWidth = true;
+            h.childControlHeight = true;
+            go.GetComponent<LayoutElement>().preferredHeight = 40;
+            go.GetComponent<LayoutElement>().flexibleWidth = 1;
             return go.transform;
         }
 
@@ -248,8 +424,10 @@ namespace Empathia
             var go = new GameObject(label, typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement));
             go.transform.SetParent(parent, false);
             go.GetComponent<Image>().color = color;
-            go.GetComponent<LayoutElement>().preferredHeight = height;
-            go.GetComponent<LayoutElement>().minHeight = height;
+            var le = go.GetComponent<LayoutElement>();
+            le.preferredHeight = height;
+            le.minHeight = 32;
+            le.flexibleWidth = 1;
 
             var textGo = new GameObject("Text", typeof(RectTransform), typeof(Text));
             textGo.transform.SetParent(go.transform, false);
@@ -260,6 +438,7 @@ namespace Empathia
             t.fontStyle = FontStyle.Bold;
             t.alignment = TextAnchor.MiddleCenter;
             t.color = Color.white;
+            t.horizontalOverflow = HorizontalWrapMode.Wrap;
             StretchFull(t.rectTransform);
 
             var btn = go.GetComponent<Button>();
@@ -406,16 +585,11 @@ namespace Empathia
         void SetBusy(bool busy)
         {
             _busy = busy;
-            if (_loginBtn != null)
-                _loginBtn.interactable = !busy;
-            if (_sessionBtn != null)
-                _sessionBtn.interactable = !busy;
-            if (_closeBtn != null)
-                _closeBtn.interactable = !busy;
-            if (_turnWavBtn != null)
-                _turnWavBtn.interactable = !busy;
-            if (_turnMicBtn != null)
-                _turnMicBtn.interactable = !busy;
+            if (_loginBtn != null) _loginBtn.interactable = !busy;
+            if (_sessionBtn != null) _sessionBtn.interactable = !busy;
+            if (_closeBtn != null) _closeBtn.interactable = !busy;
+            if (_turnWavBtn != null) _turnWavBtn.interactable = !busy;
+            if (_turnMicBtn != null) _turnMicBtn.interactable = !busy;
         }
 
         void SetState(string s)
