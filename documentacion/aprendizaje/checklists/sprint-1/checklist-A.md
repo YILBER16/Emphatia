@@ -10,6 +10,6 @@ Misión: [M1-A](../../missions/sprint-1/M1-A-login-sesion.md)
 - [ ] APRENDIZAJE actualizado  
 - [ ] Probé con B (piloto u otro PC)  
 
-**Fecha:** ________ **Nombre:** ________
+**Fecha:** 08/08/2026 **Nombre:** Isaac
 
 > Código listo en `cliente-unity/avatar/Assets/Scripts/Empathia/`. Marca en verde tras probar con B arriba.
