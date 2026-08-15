@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using TMPro;
 using UnityEngine;
@@ -42,6 +43,7 @@ namespace Empathia
 
         EmpathiaApiClient _api;
         AudioSource _audio;
+        EmpathiaLocalStt _localStt;
         TMP_FontAsset _tmpFont;
         Sprite _roundLg;
         Sprite _roundSm;
@@ -63,17 +65,21 @@ namespace Empathia
         TMP_InputField _baseUrl;
         TMP_InputField _user;
         TMP_InputField _pass;
+        TMP_InputField _typedMessage;
         TextMeshProUGUI _status;
         TextMeshProUGUI _state;
         TextMeshProUGUI _reply;
+        TextMeshProUGUI _transcript;
         TextMeshProUGUI _loginStatus;
         TextMeshProUGUI _welcomeTitle;
         TextMeshProUGUI _welcomeSub;
         Button _loginBtn;
         Button _registerBtn;
+        Button _checkBBtn;
         Button _confirmBtn;
         Button _recordBtn;
         TextMeshProUGUI _recordBtnLabel;
+        Button _sendTextBtn;
         Button _eyeBtn;
         TextMeshProUGUI _recordHint;
         bool _showPass;
@@ -93,11 +99,13 @@ namespace Empathia
             {
                 _api = GetComponent<EmpathiaApiClient>() ?? gameObject.AddComponent<EmpathiaApiClient>();
                 _audio = GetComponent<AudioSource>() ?? gameObject.AddComponent<AudioSource>();
+                _localStt = GetComponent<EmpathiaLocalStt>() ?? gameObject.AddComponent<EmpathiaLocalStt>();
                 EnsureEventSystem();
                 ApplyDisplayQuality();
                 BuildUi();
                 ApplyLayout();
-                SetLoginStatus("Listo · B 192.168.1.78:8000 · estudiante1 / password");
+                SetLoginStatus("Comprobando conexión con B…");
+                StartCoroutine(CheckConnectionToB(silent: false));
                 Debug.Log("[Empathia] UI 1920x1080 @60 · Login → Salud. Game view 1920x1080 + Play.");
             }
             catch (System.Exception ex)
@@ -410,6 +418,7 @@ namespace Empathia
             _user = AddIconInput(content.transform, "Usuario o correo electrónico", "estudiante1", "user", false);
             _pass = AddIconInput(content.transform, "Contraseña", "password", "lock", true);
 
+            _checkBBtn = AddOutlineButton(content.transform, "Probar conexión B", 52, OnCheckConnectionB);
             _loginBtn = AddGradientButton(content.transform, "Iniciar sesión", 64, OnLogin);
             _registerBtn = AddOutlineButton(content.transform, "Registrarse", 58, () =>
             {
@@ -417,7 +426,38 @@ namespace Empathia
             });
 
             AddLabel(content.transform, "Tu bienestar emocional importa.", 14, FontStyles.Normal, Muted, 20, TextAlignmentOptions.Center);
-            _loginStatus = AddLabel(content.transform, "", 12, FontStyles.Normal, new Color(0.75f, 0.25f, 0.35f), 28, TextAlignmentOptions.Center);
+            _loginStatus = AddLabel(content.transform, "", 12, FontStyles.Normal, new Color(0.75f, 0.25f, 0.35f), 36, TextAlignmentOptions.Center);
+        }
+
+        void OnCheckConnectionB()
+        {
+            if (_busy) return;
+            EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
+                ? "http://192.168.1.58:8000/api/v1"
+                : _baseUrl.text.Trim();
+            StartCoroutine(CheckConnectionToB(silent: false));
+        }
+
+        IEnumerator CheckConnectionToB(bool silent)
+        {
+            SetBusy(true);
+            if (!silent)
+                SetLoginStatus("Comprobando B en " + EmpathiaAuthState.BaseUrl + " …");
+
+            var ok = false;
+            var msg = "";
+            yield return _api.CheckHealth((success, message) =>
+            {
+                ok = success;
+                msg = message;
+            });
+
+            SetBusy(false);
+            SetLoginStatus(msg);
+            if (ok)
+                Debug.Log("[Empathia] " + msg);
+            else
+                Debug.LogWarning("[Empathia] " + msg);
         }
 
         void BuildConfirmView(Transform canvas)
@@ -486,7 +526,7 @@ namespace Empathia
             AddLabel(content.transform, "Pestaña Salud", 13, FontStyles.Bold, Purple, 18, TextAlignmentOptions.Center);
             _welcomeTitle = AddLabel(content.transform, "¡Bienvenido!", 34, FontStyles.Bold, Navy, 44, TextAlignmentOptions.Center);
             _welcomeSub = AddLabel(content.transform, "Este es tu espacio de acompañamiento emocional.", 16, FontStyles.Normal, Muted, 28, TextAlignmentOptions.Center);
-            _recordHint = AddLabel(content.transform, "1.er toque: grabar · 2.º toque: detener", 14, FontStyles.Normal, Muted, 24, TextAlignmentOptions.Center);
+            _recordHint = AddLabel(content.transform, "Grabar = voz→texto local → POST /active/text", 14, FontStyles.Normal, Muted, 24, TextAlignmentOptions.Center);
 
             _recordBtn = AddGradientButton(content.transform, "Grabar audio", 72, OnRecordPressed, 22f);
             var textTf = _recordBtn.transform.Find("Text");
@@ -494,9 +534,13 @@ namespace Empathia
                 ? textTf.GetComponent<TextMeshProUGUI>()
                 : _recordBtn.GetComponentInChildren<TextMeshProUGUI>();
 
+            _typedMessage = AddCompactInput(content.transform, "O escribe un mensaje a B", "");
+            _sendTextBtn = AddOutlineButton(content.transform, "Enviar texto a B", 48, OnSendTypedText);
+
             _state = AddLabel(content.transform, "Estado UI: idle", 13, FontStyles.Bold, Navy, 20, TextAlignmentOptions.Center);
-            _status = AddLabel(content.transform, "", 13, FontStyles.Normal, Muted, 40, TextAlignmentOptions.Center);
-            _reply = AddLabel(content.transform, "Respuesta: (sin respuesta)", 13, FontStyles.Normal, new Color(0.2f, 0.55f, 0.4f), 36, TextAlignmentOptions.Center);
+            _status = AddLabel(content.transform, "", 13, FontStyles.Normal, Muted, 36, TextAlignmentOptions.Center);
+            _transcript = AddLabel(content.transform, "Tu texto: (aún no hay)", 13, FontStyles.Normal, Navy, 40, TextAlignmentOptions.Center);
+            _reply = AddLabel(content.transform, "Respuesta EmpathIA: (sin respuesta)", 13, FontStyles.Normal, new Color(0.2f, 0.55f, 0.4f), 40, TextAlignmentOptions.Center);
 
             _labRt = _healthRt;
         }
@@ -540,8 +584,8 @@ namespace Empathia
 
             if (_recordHint != null)
                 _recordHint.text = recording
-                    ? "Grabando… toca de nuevo para detener"
-                    : "1.er toque: grabar · 2.º toque: detener";
+                    ? "Escuchando… Detener envía /active/text"
+                    : "Grabar = voz→texto → POST /active/text";
         }
 
         void ShowScreen(UiScreen screen)
@@ -560,10 +604,37 @@ namespace Empathia
             if (_welcomeTitle != null)
                 _welcomeTitle.text = "¡Bienvenido, " + name + "!";
             if (_welcomeSub != null)
-                _welcomeSub.text = "Tu bienestar importa. Empieza cuando quieras tu acompañamiento.";
-            SetStatus("En Salud · token " + EmpathiaAuthState.TokenPreview);
+                _welcomeSub.text = "Login + sesión + texto a B (/sessions/active/text).";
+            SetTranscript("(aún no hay)");
+            SetReply("(sin respuesta)");
+            SetStatus("Listo. Graba o escribe un mensaje para B.");
             SetState("idle");
             ShowScreen(UiScreen.Health);
+            StartCoroutine(EnsureSessionThenReady());
+        }
+
+        IEnumerator EnsureSessionThenReady()
+        {
+            if (EmpathiaAuthState.HasSession)
+                yield break;
+
+            var ok = false;
+            var msg = "";
+            yield return _api.CreateSession((success, message) =>
+            {
+                ok = success;
+                msg = message;
+            });
+
+            if (ok)
+            {
+                Debug.Log("[Empathia] Sesión B lista: " + EmpathiaAuthState.SessionId);
+                SetStatus("Sesión B lista. Graba o escribe texto a B.");
+                yield break;
+            }
+
+            Debug.LogWarning("[Empathia] Aún sin sesión B (se reintenta al enviar): " + msg);
+            SetStatus("Listo. Al enviar se crea sesión y POST /active/text.");
         }
 
         void ApplyLayout()
@@ -923,7 +994,7 @@ namespace Empathia
         {
             if (_busy) return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://192.168.1.78:8000/api/v1"
+                ? "http://192.168.1.58:8000/api/v1"
                 : _baseUrl.text.Trim();
 
             SetBusy(true);
@@ -949,84 +1020,70 @@ namespace Empathia
         {
             if (_busy || _recording) yield break;
 
-            // 1) Empieza a grabar YA y deja el botón en "Detener audio"
-            if (Microphone.devices == null || Microphone.devices.Length == 0)
-            {
-                SetRecordButtonUi(false);
-                SetState("idle");
-                SetReply("(error)");
-                SetStatus("No se encontró micrófono.");
-                yield break;
-            }
+            if (_localStt == null)
+                _localStt = GetComponent<EmpathiaLocalStt>() ?? gameObject.AddComponent<EmpathiaLocalStt>();
 
-            _micDevice = Microphone.devices[0];
+            // 1) Capturar texto local (Windows STT) para enviarlo a B /active/text
             _stopRecording = false;
-            _micClip = Microphone.Start(_micDevice, false, MaxMicSeconds, MicSampleRate);
-            if (_micClip == null)
+            SetRecordButtonUi(true);
+            SetState("listening");
+            SetTranscript("(habla ahora…)");
+            SetReply("(sin respuesta)");
+            SetStatus("Habla y toca Detener → se envía texto a B");
+
+            if (!_localStt.StartListening())
             {
                 SetRecordButtonUi(false);
+                SetBusy(false);
                 SetState("idle");
-                SetReply("(error)");
-                SetStatus("No se pudo iniciar la grabación.");
+                SetStatus("STT local no inició. Puedes escribir abajo y pulsar Enviar texto a B.");
+                Debug.LogWarning("[Empathia] STT local: " + (_localStt.LastError ?? "fail"));
                 yield break;
             }
-
-            var t0 = Time.realtimeSinceStartup;
-            while (Microphone.GetPosition(_micDevice) <= 0 && Time.realtimeSinceStartup - t0 < 2f)
-                yield return null;
 
             _recording = true;
             _busy = false;
             if (_recordBtn != null) _recordBtn.interactable = true;
-            SetRecordButtonUi(true);
-            SetState("listening");
-            SetReply("(grabando…)");
 
             var started = Time.realtimeSinceStartup;
-            while (!_stopRecording)
-            {
-                var elapsed = Time.realtimeSinceStartup - started;
-                if (elapsed >= MaxMicSeconds - 0.25f)
+            yield return _localStt.ListenUntil(
+                () => _stopRecording || (Time.realtimeSinceStartup - started) >= MaxMicSeconds - 0.25f,
+                MaxMicSeconds,
+                live =>
                 {
-                    SetStatus("Tiempo máximo alcanzado. Deteniendo…");
-                    break;
-                }
-
-                SetStatus("Grabando… " + elapsed.ToString("0") + " s — toca Detener audio");
-                yield return null;
-            }
-
-            var samples = Mathf.Max(1, Microphone.GetPosition(_micDevice));
-            if (Microphone.IsRecording(_micDevice))
-                Microphone.End(_micDevice);
+                    SetTranscript(live);
+                    SetStatus("Local… " + (Time.realtimeSinceStartup - started).ToString("0") + " s — Detener");
+                });
 
             _recording = false;
             _stopRecording = false;
             SetRecordButtonUi(false);
             SetBusy(true);
 
-            var wav = EmpathiaWav.FromMicrophoneClip(_micClip, samples, MicSampleRate);
-            if (_micClip != null)
-            {
-                Destroy(_micClip);
-                _micClip = null;
-            }
-            _micDevice = null;
-
-            if (wav == null || wav.Length < 100)
+            var spoken = _localStt.CurrentBestText();
+            if (string.IsNullOrWhiteSpace(spoken))
             {
                 SetBusy(false);
                 SetState("idle");
-                SetReply("(error)");
-                SetStatus("Grabación demasiado corta. Intenta de nuevo.");
+                SetTranscript("(sin texto)");
+                SetStatus("Sin texto. Habla más claro o escribe el mensaje y usa Enviar texto a B.");
+                Debug.LogWarning("[Empathia] Texto vacío; no hay POST /active/text.");
                 yield break;
             }
 
-            // 2) Tras detener: asegura sesión y envía
+            SetTranscript(spoken);
+            Debug.Log("[Empathia] Texto a enviar a B: " + spoken);
+            yield return EnsureSessionAndPostText(spoken);
+        }
+
+        IEnumerator EnsureSessionAndPostText(string message)
+        {
+            SetBusy(true);
+            SetState("processing");
+
             if (!EmpathiaAuthState.HasSession)
             {
-                SetState("processing");
-                SetStatus("Preparando sesión…");
+                SetStatus("Creando sesión en B…");
                 var sessionOk = false;
                 var sessionMsg = "";
                 yield return _api.CreateSession((ok, msg) =>
@@ -1036,49 +1093,64 @@ namespace Empathia
                 });
                 if (!sessionOk)
                 {
-                    SetBusy(false);
-                    SetState("idle");
-                    SetReply("(error)");
-                    SetStatus("Error al crear sesión: " + sessionMsg);
-                    yield break;
+                    // Con el B nuevo, active/text puede resolver la sesión activa.
+                    Debug.LogWarning("[Empathia] CreateSession: " + sessionMsg + " — pruebo alias active");
+                }
+                else
+                {
+                    Debug.Log("[Empathia] Sesión OK: " + EmpathiaAuthState.SessionId);
                 }
             }
 
-            SetState("processing");
-            SetStatus("Enviando audio…");
-            TurnResultInfo result = null;
-            var okTurn = false;
-            var msg = "";
-            yield return _api.RunTurn(wav, SetStatus, (success, info, message) =>
+            SetStatus("POST .../sessions/active/text …");
+            var sendOk = false;
+            var sendMsg = "";
+            SessionTextResponse parsed = null;
+            yield return _api.SendActiveText(message, (ok, msg, response) =>
             {
-                okTurn = success;
-                result = info;
-                msg = message;
+                sendOk = ok;
+                sendMsg = msg;
+                parsed = response;
             });
 
-            if (!okTurn || result == null)
+            if (!sendOk)
             {
                 SetBusy(false);
                 SetState("idle");
                 SetReply("(error)");
-                SetStatus("Error: " + msg);
+                SetStatus("B no recibió el texto: " + sendMsg);
+                Debug.LogWarning("[Empathia] Falló POST /active/text: " + sendMsg);
                 yield break;
             }
 
-            SetReply(result.ReplyText ?? "(vacía)");
-            SetState("speaking");
-            var ttsOk = false;
-            var ttsMsg = "";
-            yield return _api.DownloadAndPlayTts(result.TtsUrl, _audio, (s, m) =>
-            {
-                ttsOk = s;
-                ttsMsg = m;
-            });
-            SetStatus(ttsOk ? "Audio listo · " + ttsMsg : "Error TTS: " + ttsMsg);
-            if (ttsOk && _audio.clip != null)
-                yield return new WaitForSeconds(_audio.clip.length + 0.1f);
+            var reply = parsed != null && !string.IsNullOrWhiteSpace(parsed.reply_text)
+                ? parsed.reply_text.Trim()
+                : (parsed != null && !string.IsNullOrWhiteSpace(parsed.received_text)
+                    ? ("B recibió: " + parsed.received_text.Trim())
+                    : "(B recibió el texto)");
+            var transcript = parsed != null && !string.IsNullOrWhiteSpace(parsed.transcript)
+                ? parsed.transcript.Trim()
+                : message;
+
+            SetTranscript(transcript);
+            SetReply(reply);
+            Debug.Log("[Empathia] B recibió texto. Respuesta: " + reply);
+            Debug.Log("[Empathia] Raw B: " + sendMsg);
+            SetStatus("Texto enviado a B (active/text). Mira artisan serve.");
             SetBusy(false);
             SetState("idle");
+        }
+
+        void OnSendTypedText()
+        {
+            if (_busy) return;
+            var msg = _typedMessage != null ? _typedMessage.text.Trim() : "";
+            if (string.IsNullOrWhiteSpace(msg))
+            {
+                SetStatus("Escribe un mensaje primero.");
+                return;
+            }
+            StartCoroutine(EnsureSessionAndPostText(msg));
         }
 
         void SetBusy(bool busy)
@@ -1086,10 +1158,13 @@ namespace Empathia
             _busy = busy;
             if (_loginBtn != null) _loginBtn.interactable = !busy;
             if (_registerBtn != null) _registerBtn.interactable = !busy;
+            if (_checkBBtn != null) _checkBBtn.interactable = !busy;
             if (_confirmBtn != null) _confirmBtn.interactable = !busy;
             // Durante grabación el botón debe seguir activo para el 2.º toque
             if (_recordBtn != null)
                 _recordBtn.interactable = _recording || !busy;
+            if (_sendTextBtn != null)
+                _sendTextBtn.interactable = !busy;
         }
 
         void SetState(string s)
@@ -1113,7 +1188,13 @@ namespace Empathia
         void SetReply(string s)
         {
             if (_reply != null)
-                _reply.text = "Respuesta: " + s;
+                _reply.text = "Respuesta EmpathIA: " + s;
+        }
+
+        void SetTranscript(string s)
+        {
+            if (_transcript != null)
+                _transcript.text = "Tu texto: " + s;
         }
     }
 }

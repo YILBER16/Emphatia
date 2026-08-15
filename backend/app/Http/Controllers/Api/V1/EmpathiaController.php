@@ -75,11 +75,29 @@ class EmpathiaController extends Controller
             'expires_at' => now()->addDays(7),
         ]);
 
+        // Laboratorio: al login, cerrar sesiones activas para no bloquear a A.
+        // Importante: no usar STDERR (en namespace falla como constante indefinida → HTTP 500).
+        $closed = 0;
+        try {
+            $closed = AccompanimentSession::query()
+                ->where('status', 'active')
+                ->update([
+                    'status' => 'closed',
+                    'ended_at' => now(),
+                ]);
+            if ($closed > 0) {
+                logger()->info('[B] Login '.$user->username.' — sesiones activas cerradas: '.$closed);
+            }
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
         return response()->json([
             'token' => $plain,
             'token_type' => 'Bearer',
             'expires_at' => now()->addDays(7)->utc()->toIso8601String(),
             'user' => $this->userPayload($user),
+            'closed_active_sessions' => $closed,
         ]);
     }
 
@@ -108,18 +126,6 @@ class EmpathiaController extends Controller
             ], 403);
         }
 
-        $active = AccompanimentSession::query()->where('status', 'active')->first();
-        if ($active) {
-            // Incluye session.id para que A pueda reutilizarla (Unity no tiene listado).
-            return response()->json([
-                'error' => ['code' => 'SESSION_ALREADY_ACTIVE', 'message' => 'Only one active session allowed on this node'],
-                'session' => [
-                    'id' => $active->id,
-                    'status' => $active->status,
-                ],
-            ], 409);
-        }
-
         $data = $request->validate([
             'locale' => 'sometimes|in:es',
             'client' => 'sometimes|in:unity',
@@ -129,35 +135,190 @@ class EmpathiaController extends Controller
             ? User::query()->where('role', 'student')->value('id')
             : $user->id;
 
-        $session = AccompanimentSession::query()->create([
-            'id' => (string) Str::uuid(),
-            'student_user_id' => $studentId,
-            'status' => 'active',
-            'locale' => $data['locale'] ?? 'es',
-            'client' => $data['client'] ?? 'unity',
-            'ws_ticket' => Str::random(40),
-            'started_at' => now(),
-        ]);
+        if (empty($studentId)) {
+            return response()->json([
+                'error' => [
+                    'code' => 'VALIDATION_ERROR',
+                    'message' => 'No student user available to attach the session',
+                ],
+            ], 422);
+        }
 
-        $events->push($session, 'session.ready', [
-            'session_id' => $session->id,
-            'student_user_id' => (string) $session->student_user_id,
-            'locale' => $session->locale,
-        ]);
-        $events->push($session, 'session.state', ['state' => 'idle']);
+        try {
+            // Laboratorio: cerrar sesión activa previa (si existe) para no bloquear a A.
+            $active = AccompanimentSession::query()->where('status', 'active')->first();
+            if ($active) {
+                $active->status = 'closed';
+                $active->ended_at = now();
+                $active->save();
+                try {
+                    $events->push($active, 'session.closed', ['reason' => 'replaced']);
+                    $events->push($active, 'session.state', ['state' => 'closed']);
+                } catch (\Throwable $e) {
+                    // No tumbar createSession si el event bus falla al cerrar.
+                    report($e);
+                }
+            }
 
+            $session = AccompanimentSession::query()->create([
+                'id' => (string) Str::uuid(),
+                'student_user_id' => $studentId,
+                'status' => 'active',
+                'locale' => $data['locale'] ?? 'es',
+                'client' => $data['client'] ?? 'unity',
+                'ws_ticket' => Str::random(40),
+                'started_at' => now(),
+            ]);
+
+            $events->push($session, 'session.ready', [
+                'session_id' => $session->id,
+                'student_user_id' => (string) $session->student_user_id,
+                'locale' => $session->locale,
+            ]);
+            $events->push($session, 'session.state', ['state' => 'idle']);
+
+            logger()->info('[B] Nueva sesión activa id='.$session->id);
+
+            $startedAt = $session->started_at
+                ? $session->started_at->utc()->toIso8601String()
+                : now('UTC')->toIso8601String();
+
+            return response()->json([
+                'session' => [
+                    'id' => $session->id,
+                    'student_user_id' => (string) $session->student_user_id,
+                    'status' => $session->status,
+                    'locale' => $session->locale,
+                    'client' => $session->client,
+                    'started_at' => $startedAt,
+                    'ws_url' => 'ws://127.0.0.1:8000/ws/v1/accompaniment/'.$session->id,
+                    'ws_ticket' => $session->ws_ticket,
+                ],
+            ], 201);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'error' => [
+                    'code' => 'INTERNAL_ERROR',
+                    'message' => 'createSession failed: '.$e->getMessage(),
+                ],
+            ], 500);
+        }
+    }
+
+    public function getActiveSession(Request $request)
+    {
+        $active = AccompanimentSession::query()->where('status', 'active')->first();
+        if (!$active) {
+            return response()->json(['session' => null]);
+        }
+
+        // Lab: cualquier usuario autenticado puede leer el id activo (desbloquea a A).
         return response()->json([
             'session' => [
-                'id' => $session->id,
-                'student_user_id' => (string) $session->student_user_id,
-                'status' => $session->status,
-                'locale' => $session->locale,
-                'client' => $session->client,
-                'started_at' => $session->started_at->utc()->toIso8601String(),
-                'ws_url' => 'ws://127.0.0.1:8000/ws/v1/accompaniment/'.$session->id,
-                'ws_ticket' => $session->ws_ticket,
+                'id' => $active->id,
+                'status' => $active->status,
+                'student_user_id' => (string) $active->student_user_id,
             ],
-        ], 201);
+        ]);
+    }
+
+    public function closeActiveSession(Request $request, SessionEventBus $events)
+    {
+        $active = AccompanimentSession::query()->where('status', 'active')->first();
+        if (!$active) {
+            return response()->json(['ok' => true, 'closed' => false, 'message' => 'No active session']);
+        }
+
+        try {
+            $active->status = 'closed';
+            $active->ended_at = now();
+            $active->save();
+            try {
+                $events->push($active, 'session.closed', ['reason' => 'user']);
+                $events->push($active, 'session.state', ['state' => 'closed']);
+            } catch (\Throwable $e) {
+                report($e);
+            }
+
+            return response()->json([
+                'ok' => true,
+                'closed' => true,
+                'session' => ['id' => $active->id, 'status' => 'closed'],
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'error' => [
+                    'code' => 'INTERNAL_ERROR',
+                    'message' => 'closeActiveSession failed: '.$e->getMessage(),
+                ],
+            ], 500);
+        }
+    }
+
+    /**
+     * Recibe texto del cliente A (alias active o UUID).
+     * Body: { "text": "...", "client_turn_key": "<uuid>" } (message también aceptado).
+     * Nota: en el B de lab en LAN, client_turn_key es obligatorio.
+     */
+    public function postSessionText(Request $request, string $sessionId = 'active')
+    {
+        $data = $request->validate([
+            'text' => 'sometimes|string|max:5000',
+            'message' => 'sometimes|string|max:5000',
+            'client_turn_key' => 'sometimes|uuid',
+        ]);
+
+        $message = trim((string) ($data['text'] ?? $data['message'] ?? ''));
+        if ($message === '') {
+            return response()->json([
+                'error' => ['code' => 'VALIDATION_ERROR', 'message' => 'text/message is required'],
+            ], 422);
+        }
+
+        $session = $sessionId === 'active'
+            ? AccompanimentSession::query()->where('status', 'active')->first()
+            : AccompanimentSession::query()->find($sessionId);
+
+        if (! $session || $session->status !== 'active') {
+            return response()->json([
+                'error' => ['code' => 'VALIDATION_ERROR', 'message' => 'No active session'],
+            ], 422);
+        }
+
+        logger()->info('[A→B TEXTO] session='.$session->id.' | '.$message);
+
+        $turnKey = $data['client_turn_key'] ?? (string) Str::uuid();
+        $sequence = (int) Turn::query()->where('session_id', $session->id)->max('sequence_no') + 1;
+        $turnId = (string) Str::uuid();
+
+        $turn = Turn::query()->create([
+            'id' => $turnId,
+            'session_id' => $session->id,
+            'sequence_no' => $sequence,
+            'client_turn_key' => $turnKey,
+            'status' => 'accepted',
+            'transcript' => $message,
+            'reply_text' => 'Recibí tu mensaje: '.$message,
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'session_id' => $session->id,
+            'received_text' => $message,
+            'reply_text' => $turn->reply_text,
+            'transcript' => $message,
+            'turn' => [
+                'id' => $turn->id,
+                'session_id' => $turn->session_id,
+                'sequence_no' => $turn->sequence_no,
+                'status' => $turn->status,
+                'client_turn_key' => $turn->client_turn_key,
+            ],
+        ], 202);
     }
 
     public function getSession(Request $request, string $sessionId)

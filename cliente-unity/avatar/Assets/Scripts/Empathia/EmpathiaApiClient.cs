@@ -15,6 +15,38 @@ namespace Empathia
         const float PollIntervalSeconds = 0.5f;
         const float TurnTimeoutSeconds = 45f;
 
+        public IEnumerator CheckHealth(Action<bool, string> onDone)
+        {
+            var url = EmpathiaAuthState.BaseUrl.TrimEnd('/') + "/health";
+            yield return SendJson(
+                "GET",
+                url,
+                "{}",
+                bearer: null,
+                (ok, code, text) =>
+                {
+                    if (!ok)
+                    {
+                        onDone(false, MapError(code, text, "No hay conexión con B en " + EmpathiaAuthState.BaseUrl));
+                        return;
+                    }
+
+                    var status = "ok";
+                    try
+                    {
+                        var parsed = JsonUtility.FromJson<HealthResponse>(text);
+                        if (parsed != null && !string.IsNullOrEmpty(parsed.status))
+                            status = parsed.status;
+                    }
+                    catch
+                    {
+                        // body crudo abajo
+                    }
+
+                    onDone(true, "Conexión OK con B (" + status + "). " + (text ?? ""));
+                });
+        }
+
         public IEnumerator Login(string username, string password, Action<bool, string> onDone)
         {
             var body = new LoginRequest { username = username, password = password };
@@ -40,7 +72,7 @@ namespace Empathia
 
                     EmpathiaAuthState.Token = parsed.token;
                     EmpathiaAuthState.Username = parsed.user != null ? parsed.user.username : username;
-                    EmpathiaAuthState.ClearSession();
+                    EmpathiaAuthState.ClearSessionMemory();
                     onDone(true, "Login OK. Token: " + EmpathiaAuthState.TokenPreview);
                 });
         }
@@ -54,6 +86,11 @@ namespace Empathia
             }
 
             var body = new CreateSessionRequest();
+            long lastCode = 0;
+            string lastText = "";
+            var created = false;
+            var createMsg = "";
+
             yield return SendJson(
                 "POST",
                 EmpathiaAuthState.BaseUrl.TrimEnd('/') + "/accompaniment/sessions",
@@ -61,29 +98,172 @@ namespace Empathia
                 EmpathiaAuthState.Token,
                 (ok, code, text) =>
                 {
-                    // Si ya hay sesión activa, B puede devolver el id para reutilizarla.
-                    if (!ok)
+                    lastCode = code;
+                    lastText = text ?? "";
+                    if (ok)
                     {
-                        var adopted = TryAdoptSessionFromBody(text);
-                        if (adopted)
+                        var parsed = JsonUtility.FromJson<CreateSessionResponse>(text);
+                        if (parsed == null || parsed.session == null || string.IsNullOrEmpty(parsed.session.id))
                         {
-                            onDone(true, "Sesión activa reutilizada. Id: " + EmpathiaAuthState.SessionId);
+                            createMsg = "Respuesta de sesión sin id.";
                             return;
                         }
 
-                        onDone(false, MapError(code, text, "No se pudo crear la sesión."));
+                        EmpathiaAuthState.SessionId = parsed.session.id;
+                        created = true;
+                        createMsg = "Sesión creada. Id: " + EmpathiaAuthState.SessionId;
                         return;
                     }
 
-                    var parsed = JsonUtility.FromJson<CreateSessionResponse>(text);
-                    if (parsed == null || parsed.session == null || string.IsNullOrEmpty(parsed.session.id))
+                    if (TryAdoptSessionFromBody(text))
                     {
-                        onDone(false, "Respuesta de sesión sin id.");
+                        created = true;
+                        createMsg = "Sesión activa reutilizada. Id: " + EmpathiaAuthState.SessionId;
+                    }
+                });
+
+            if (created)
+            {
+                onDone(true, createMsg);
+                yield break;
+            }
+
+            if (lastCode == 409 || ExtractErrorCode(lastText) == "SESSION_ALREADY_ACTIVE")
+            {
+                // Reutilizar la sesión activa: NO hace falta crear otra para poder hacer POST /turns.
+                if (TryAdoptSessionFromBody(lastText))
+                {
+                    onDone(true, "Sesión activa reutilizada. Id: " + EmpathiaAuthState.SessionId);
+                    yield break;
+                }
+
+                var savedId = EmpathiaAuthState.SavedSessionId;
+                if (!string.IsNullOrEmpty(savedId))
+                {
+                    EmpathiaAuthState.SessionId = savedId;
+                    Debug.Log("[Empathia] Reutilizando sesión guardada para /turns: " + savedId);
+                    onDone(true, "Reutilizando sesión guardada. Id: " + savedId);
+                    yield break;
+                }
+
+                var adopted = false;
+                var adoptMsg = "";
+                yield return FetchActiveSession((ok, msg) =>
+                {
+                    adopted = ok;
+                    adoptMsg = msg;
+                });
+                if (adopted)
+                {
+                    onDone(true, adoptMsg);
+                    yield break;
+                }
+
+                onDone(false,
+                    "Hay una sesión activa en B y Unity no conoce su id. " +
+                    "Pide a B: php artisan empathia:close-active-sessions " +
+                    "(o reiniciar B con el fix de auto-cierre). " +
+                    MapError(lastCode, lastText, "SESSION_ALREADY_ACTIVE"));
+                Debug.LogWarning("[Empathia] CreateSession 409 body: " + lastText);
+                yield break;
+            }
+
+            onDone(false, MapError(lastCode, lastText, "No se pudo crear la sesión."));
+        }
+
+        public IEnumerator CloseSessionById(string sessionId, Action<bool, string> onDone)
+        {
+            if (!EmpathiaAuthState.HasToken)
+            {
+                onDone(false, "Primero haz login.");
+                yield break;
+            }
+
+            if (string.IsNullOrEmpty(sessionId))
+            {
+                onDone(false, "sessionId vacío.");
+                yield break;
+            }
+
+            var url = EmpathiaAuthState.BaseUrl.TrimEnd('/')
+                      + "/accompaniment/sessions/"
+                      + sessionId
+                      + "/close";
+
+            yield return SendJson(
+                "POST",
+                url,
+                "{}",
+                EmpathiaAuthState.Token,
+                (ok, code, text) =>
+                {
+                    if (!ok)
+                    {
+                        onDone(false, MapError(code, text, "No se pudo cerrar la sesión."));
                         return;
                     }
 
-                    EmpathiaAuthState.SessionId = parsed.session.id;
-                    onDone(true, "Sesión creada. Id: " + EmpathiaAuthState.SessionId);
+                    EmpathiaAuthState.ClearSessionMemory();
+                    if (EmpathiaAuthState.SavedSessionId == sessionId)
+                        EmpathiaAuthState.ForgetSavedSession();
+                    onDone(true, "Sesión cerrada: " + sessionId);
+                });
+        }
+
+        public IEnumerator FetchActiveSession(Action<bool, string> onDone)
+        {
+            if (!EmpathiaAuthState.HasToken)
+            {
+                onDone(false, "Primero haz login.");
+                yield break;
+            }
+
+            yield return SendJson(
+                "GET",
+                EmpathiaAuthState.BaseUrl.TrimEnd('/') + "/accompaniment/sessions/active",
+                "{}",
+                EmpathiaAuthState.Token,
+                (ok, code, text) =>
+                {
+                    if (!ok)
+                    {
+                        onDone(false, MapError(code, text, "No se pudo consultar la sesión activa."));
+                        return;
+                    }
+
+                    if (!TryAdoptSessionFromBody(text))
+                    {
+                        onDone(false, "No hay sesión activa en B.");
+                        return;
+                    }
+
+                    onDone(true, "Sesión activa tomada. Id: " + EmpathiaAuthState.SessionId);
+                });
+        }
+
+        public IEnumerator CloseActiveSessionOnServer(Action<bool, string> onDone)
+        {
+            if (!EmpathiaAuthState.HasToken)
+            {
+                onDone(false, "Primero haz login.");
+                yield break;
+            }
+
+            yield return SendJson(
+                "POST",
+                EmpathiaAuthState.BaseUrl.TrimEnd('/') + "/accompaniment/sessions/active/close",
+                "{}",
+                EmpathiaAuthState.Token,
+                (ok, code, text) =>
+                {
+                    if (!ok)
+                    {
+                        onDone(false, MapError(code, text, "No se pudo cerrar la sesión activa."));
+                        return;
+                    }
+
+                    EmpathiaAuthState.ClearSessionMemory();
+                    onDone(true, "Sesión activa cerrada en B.");
                 });
         }
 
@@ -91,18 +271,30 @@ namespace Empathia
         {
             if (string.IsNullOrEmpty(text))
                 return false;
+
             try
             {
                 var parsed = JsonUtility.FromJson<CreateSessionResponse>(text);
-                if (parsed?.session == null || string.IsNullOrEmpty(parsed.session.id))
-                    return false;
-                EmpathiaAuthState.SessionId = parsed.session.id;
-                return true;
+                if (parsed != null && parsed.session != null && !string.IsNullOrEmpty(parsed.session.id))
+                {
+                    EmpathiaAuthState.SessionId = parsed.session.id;
+                    return true;
+                }
             }
             catch
             {
-                return false;
+                // fallback abajo
             }
+
+            // Extrae UUID aunque el JSON venga con otros campos.
+            var match = System.Text.RegularExpressions.Regex.Match(
+                text,
+                "\"id\"\\s*:\\s*\"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\"");
+            if (!match.Success)
+                return false;
+
+            EmpathiaAuthState.SessionId = match.Groups[1].Value;
+            return true;
         }
 
         public IEnumerator CloseSession(Action<bool, string> onDone)
@@ -143,6 +335,143 @@ namespace Empathia
         }
 
         /// <summary>
+        /// Envía texto a B: POST .../sessions/active/text (o session.id).
+        /// </summary>
+        public IEnumerator SendSessionText(string message, Action<bool, string, SessionTextResponse> onDone)
+        {
+            if (!EmpathiaAuthState.HasToken)
+            {
+                onDone(false, "Primero haz login.", null);
+                yield break;
+            }
+
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                onDone(false, "Texto vacío.", null);
+                yield break;
+            }
+
+            // Preferir alias active (B lo documentó así).
+            var sessionKey = "active";
+            if (!string.IsNullOrEmpty(EmpathiaAuthState.SessionId))
+                sessionKey = EmpathiaAuthState.SessionId;
+
+            // Si no hay sesión en memoria, usar active; B resuelve la activa.
+            if (string.IsNullOrEmpty(EmpathiaAuthState.SessionId))
+                sessionKey = "active";
+
+            var url = EmpathiaAuthState.BaseUrl.TrimEnd('/')
+                      + "/accompaniment/sessions/"
+                      + sessionKey
+                      + "/text";
+
+            var turnKey = System.Guid.NewGuid().ToString();
+            var body = new SessionTextRequest
+            {
+                text = message.Trim(),
+                message = message.Trim(),
+                client_turn_key = turnKey,
+            };
+
+            Debug.Log("[Empathia] POST " + url + " | key=" + turnKey + " | " + message.Trim());
+
+            yield return SendJson(
+                "POST",
+                url,
+                JsonUtility.ToJson(body),
+                EmpathiaAuthState.Token,
+                (ok, code, text) =>
+                {
+                    if (!ok)
+                    {
+                        // Si falló con UUID, reintentar con active lo hace el caller; aquí solo reportamos.
+                        onDone(false, MapError(code, text, "No se pudo enviar texto a B."), null);
+                        return;
+                    }
+
+                    SessionTextResponse parsed = null;
+                    try
+                    {
+                        parsed = JsonUtility.FromJson<SessionTextResponse>(text);
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+
+                    if (parsed != null && !string.IsNullOrEmpty(parsed.session_id))
+                        EmpathiaAuthState.SessionId = parsed.session_id;
+                    if (parsed != null && parsed.turn != null && !string.IsNullOrEmpty(parsed.turn.session_id))
+                        EmpathiaAuthState.SessionId = parsed.turn.session_id;
+
+                    onDone(true, text, parsed);
+                });
+        }
+
+        /// <summary>
+        /// Igual que SendSessionText pero fuerza alias "active".
+        /// B exige client_turn_key (UUID) junto al texto.
+        /// </summary>
+        public IEnumerator SendActiveText(string message, Action<bool, string, SessionTextResponse> onDone)
+        {
+            if (!EmpathiaAuthState.HasToken)
+            {
+                onDone(false, "Primero haz login.", null);
+                yield break;
+            }
+
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                onDone(false, "Texto vacío.", null);
+                yield break;
+            }
+
+            var url = EmpathiaAuthState.BaseUrl.TrimEnd('/')
+                      + "/accompaniment/sessions/active/text";
+
+            var turnKey = System.Guid.NewGuid().ToString();
+            var body = new SessionTextRequest
+            {
+                text = message.Trim(),
+                message = message.Trim(),
+                client_turn_key = turnKey,
+            };
+
+            Debug.Log("[Empathia] POST " + url + " | key=" + turnKey + " | " + message.Trim());
+
+            yield return SendJson(
+                "POST",
+                url,
+                JsonUtility.ToJson(body),
+                EmpathiaAuthState.Token,
+                (ok, code, text) =>
+                {
+                    if (!ok)
+                    {
+                        onDone(false, MapError(code, text, "No se pudo enviar texto a B (/active/text)."), null);
+                        return;
+                    }
+
+                    SessionTextResponse parsed = null;
+                    try
+                    {
+                        parsed = JsonUtility.FromJson<SessionTextResponse>(text);
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+
+                    if (parsed != null && !string.IsNullOrEmpty(parsed.session_id))
+                        EmpathiaAuthState.SessionId = parsed.session_id;
+                    if (parsed != null && parsed.turn != null && !string.IsNullOrEmpty(parsed.turn.session_id))
+                        EmpathiaAuthState.SessionId = parsed.turn.session_id;
+
+                    onDone(true, text, parsed);
+                });
+        }
+
+        /// <summary>
         /// Sube WAV multipart, hace poll de events hasta turn.result / turn.error, descarga TTS.
         /// </summary>
         public IEnumerator RunTurn(
@@ -168,7 +497,7 @@ namespace Empathia
                           + EmpathiaAuthState.SessionId
                           + "/turns";
 
-            onStatus?.Invoke("Subiendo audio a B…");
+            onStatus?.Invoke("Enviando audio para pasarlo a texto…");
             string turnId = null;
             string uploadError = null;
 
@@ -176,7 +505,7 @@ namespace Empathia
             {
                 if (!ok)
                 {
-                    uploadError = MapError(code, text, "No se pudo enviar el turno.");
+                    uploadError = MapError(code, text, "No se pudo enviar el audio.");
                     return;
                 }
 
@@ -192,7 +521,7 @@ namespace Empathia
                 yield break;
             }
 
-            onStatus?.Invoke("Turno aceptado (" + turnId + "). Esperando events…");
+            onStatus?.Invoke("Audio enviado. Convirtiendo a texto…");
 
             long after = 0;
             var elapsed = 0f;
@@ -257,6 +586,8 @@ namespace Empathia
                                     Transcript = ev.payload.transcript,
                                     TtsUrl = BuildTtsUrl(ev.payload.turn_id, ev.payload.tts != null ? ev.payload.tts.url : null),
                                 };
+                                Debug.Log("[Empathia] turn.result transcript: " + (result.Transcript ?? "(vacío)"));
+                                Debug.Log("[Empathia] turn.result reply_text: " + (result.ReplyText ?? "(vacío)"));
                                 break;
                             }
                         }
@@ -481,10 +812,15 @@ namespace Empathia
         {
             using (var req = new UnityWebRequest(url, method))
             {
-                var payload = Encoding.UTF8.GetBytes(json ?? "{}");
-                req.uploadHandler = new UploadHandlerRaw(payload);
+                if (!string.Equals(method, "GET", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(method, "HEAD", StringComparison.OrdinalIgnoreCase))
+                {
+                    var payload = Encoding.UTF8.GetBytes(json ?? "{}");
+                    req.uploadHandler = new UploadHandlerRaw(payload);
+                    req.SetRequestHeader("Content-Type", "application/json");
+                }
+
                 req.downloadHandler = new DownloadHandlerBuffer();
-                req.SetRequestHeader("Content-Type", "application/json");
                 req.SetRequestHeader("Accept", "application/json");
                 if (!string.IsNullOrEmpty(bearer))
                     req.SetRequestHeader("Authorization", "Bearer " + bearer);

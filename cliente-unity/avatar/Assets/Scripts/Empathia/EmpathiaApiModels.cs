@@ -3,6 +3,12 @@ using System;
 namespace Empathia
 {
     [Serializable]
+    public class HealthResponse
+    {
+        public string status;
+    }
+
+    [Serializable]
     public class LoginRequest
     {
         public string username;
@@ -25,6 +31,26 @@ namespace Empathia
         public string display_name;
         public string role;
         public string username;
+    }
+
+    [Serializable]
+    public class SessionTextRequest
+    {
+        public string text;
+        public string message;
+        public string client_turn_key;
+    }
+
+    [Serializable]
+    public class SessionTextResponse
+    {
+        public bool ok;
+        public string session_id;
+        public string received_text;
+        public string reply_text;
+        public string transcript;
+        public string message;
+        public TurnDto turn;
     }
 
     [Serializable]
