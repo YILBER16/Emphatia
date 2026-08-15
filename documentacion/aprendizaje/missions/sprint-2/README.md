@@ -1,30 +1,58 @@
-# Sprint 2 — Turno con audio y base real
+# Sprint 2 — Primer turno de conversación (esqueleto vivo)
+
+## De dónde venimos (ya logrado)
+
+| Rol | Logrado (Sprint 0–1) |
+|-----|----------------------|
+| **A** | Proyecto Unity + avatars; cliente login/sesión (`EmpathiaApiClient`, etc.) |
+| **B** | API health, humo, README para A, APRENDIZAJE |
+| **C** | Stub InferTurn, `PRUEBA_STUB.md`, contrato explicado |
+| **D** | Fixture ExpressionPacket + misión de tabla morphs (Sprint 1) |
+
+**Aún no existe de punta a punta:** micrófono → turno → respuesta hablada → boca.
 
 ## Objetivo del sprint
 
-Pasar del stub demostrable a un **turno con audio mejor preparado**: el equipo entiende qué entra, qué sale y cómo se va a sustituir el stub por componentes reales en etapas.
+Que el equipo complete el **primer turno mínimo del mapa EmpathIA** con stub de IA (sin Whisper/Ollama/Kokoro obligatorios):
 
-## Resultado esperado (equipo)
+```text
+A graba/envía audio → B acepta turno → (stub C) → events turn.result
+→ A muestra texto + reproduce TTS → D/A aplican expresión mínima o packet visible
+```
 
-| Rol | Hecho |
-|-----|-------|
-| A | Tiene claro qué pedirá al turno de C y cómo lo consumirá |
-| B | Consume el contrato de C sin inventar shape nuevo |
-| C | Explica el contrato del turno y demuestra el stub vivo |
-| D | Deja claro qué timing/visemas necesita A |
+## Resultado esperado por rol
+
+| Rol | Hecho al cerrar Sprint 2 |
+|-----|--------------------------|
+| **A** | Tras sesión: subir audio de turno, poll events, mostrar `reply_text`, reproducir audio TTS |
+| **B** | Turno multipart + events estables; documentado para A; humo OK; stub C opcional detrás de flag |
+| **C** | Stub responde bien a paths reales de audio del piloto; InferTurn demo con B; plan escrito STT→LLM→TTS (sin exigir modelos instalados) |
+| **D** | Tabla morphs cerrada con A; packet de ejemplo listo; guía de 1 morph mínimo en Speaking |
 
 ## Misiones
 
-1. [M2-C](./M2-C-turno-audio-inferturn.md)
-2. En paralelo, el resto de roles documenta el puente de sesión 2 según la clase de mañana.
+- [M2-A](./M2-A-turno-audio-ui.md) — turno en Unity  
+- [M2-B](./M2-B-orquestacion-turno.md) — orquestación y docs del turno  
+- [M2-C](./M2-C-turno-audio-inferturn.md) — stub + contrato + puente con B *(ampliada)*  
+- [M2-D](./M2-D-expresion-en-turno.md) — expresión en el turno  
 
 ## Definition of Done — Sprint 2
 
-- [ ] C puede explicar en español simple qué recibe y qué devuelve InferTurn
-- [ ] El stub sigue respondiendo sin traceback
-- [ ] El equipo tiene una máquina piloto y un flujo de demo acordado
-- [ ] Nadie marcó IA real como cerrada sin haberla integrado por etapas
+- [ ] En PC piloto: login → sesión → **un turno** → `turn.result` visible en A (texto)  
+- [ ] Audio TTS se puede oír (aunque sea silencio/stub)  
+- [ ] Checklists A/B/C/D Sprint 2 en verde o parcial documentado  
+- [ ] Prueba de humo sigue OK  
+- [ ] Nadie cambió `contratos/` sin Contract Review  
+- [ ] IA real **no** es requisito de cierre (solo plan / spike opcional en C)  
 
 ## Fuera de alcance
 
-WebSockets reales, IA en red, cambios de contrato en `contratos/`, escribir en la DB de B, exponer servicios fuera de localhost.
+- Whisper / Ollama / Kokoro como “done”  
+- WebSockets nativos (sigue poll)  
+- Lip-sync cinematográfico  
+- Multi-usuario / MySQL obligatorio  
+- Alertas al orientador en vivo  
+
+## Por qué este orden (arquitectura)
+
+El [PROJECT_MAP](../../PROJECT_MAP.md) pide el flujo de turno completo. Login ya existe; el cuello de botella siguiente es **el turno**. Expresión e InferTurn avanzan en paralelo para no bloquearse.

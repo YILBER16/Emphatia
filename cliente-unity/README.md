@@ -1,15 +1,22 @@
 # Cliente Unity (módulo A)
 
-Aquí va el proyecto Unity 6.
+Proyecto Unity 6 en `avatar/`.
 
-## Fase 0
+## Sprint 1 — Login y sesión
 
-No hace falta Unity para probar la base. Usen:
+1. Enciende B: `php artisan serve --host=127.0.0.1 --port=8000` (carpeta `backend/`).
+2. Abre `avatar/` en Unity Hub → Play.
+3. La UI de login aparece sola. Credenciales lab: `estudiante1` / `password`.
+4. Flujo: **Entrar** → ver token → **Crear sesión** → (opcional) **Cerrar sesión**.
+
+Scripts: `avatar/Assets/Scripts/Empathia/`.
+
+## Fase 0 (sin Unity)
 
 ```powershell
 .\herramientas\prueba-humo-fase0.ps1
 ```
 
-## Después
+## Regla dura
 
-Login, micrófono, avatar, audio y paquete de expresión (con D).
+Solo hablar con B (`:8000`). Nunca con Inteligencia (`:8100`).

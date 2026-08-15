@@ -1,8 +1,11 @@
-# Checklist de integración — Sprint 2
+# Checklist Sprint 2 — Integración de equipo
 
-- [ ] A conoce qué devuelve C y cómo consume el turno
-- [ ] B tiene claro el contrato de C y no inventó campos nuevos
-- [ ] C demostró el stub vivo al equipo
-- [ ] D sabe qué timing/visemas necesita A
-- [ ] Hay una máquina piloto acordada para la demo
-- [ ] Nadie escribió en la DB de B desde C
+- [ ] Demo piloto: login → sesión → **turno** → texto en A  
+- [ ] TTS se oyó (aunque sea stub/silencio)  
+- [ ] B documentó el turno para A  
+- [ ] C demostró puente con B  
+- [ ] D+A tienen morph mínimo o bloqueo claro  
+- [ ] Humo OK  
+- [ ] Contratos intactos  
+
+**Mentor OK:** ________ **Fecha:** ________
