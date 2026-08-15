@@ -21,21 +21,13 @@ class TurnOrchestrator
             'stage' => 'text',
         ]);
 
-        $this->console('[B→C TEXTO] enviando a '.config('empathia.intelligence_url').' | '.$studentText);
-
-        $outDir = rtrim(config('empathia.data_root'), DIRECTORY_SEPARATOR)
-            .DIRECTORY_SEPARATOR.'audio'.DIRECTORY_SEPARATOR.'input'
-            .DIRECTORY_SEPARATOR.$session->id;
-        if (! is_dir($outDir)) {
-            mkdir($outDir, 0777, true);
-        }
-        $audioPath = $outDir.DIRECTORY_SEPARATOR.$turn->id.'.wav';
-        $this->writeSilentWav($audioPath);
+        $intelUrl = rtrim((string) config('empathia.intelligence_url'), '/').'/internal/v1/infer/turn';
+        $this->console('[B→C TEXTO] POST '.$intelUrl.' | '.$studentText);
 
         try {
             $inference = config('empathia.intel_stub')
                 ? $this->stubInference($turn, $session, $studentText)
-                : $this->callIntelligence($turn, $session, $audioPath, $studentText);
+                : $this->callIntelligenceText($turn, $session, $studentText);
             if ($studentText !== '') {
                 $inference['transcript']['text'] = $studentText;
             }
@@ -45,9 +37,6 @@ class TurnOrchestrator
         }
 
         $this->persistInference($turn, $session, $inference);
-        if (is_file($audioPath)) {
-            @unlink($audioPath);
-        }
         $this->pushTurnResult($turn, $session);
         $this->console('[B→C TEXTO] listo turn='.$turn->id.' reply='.($turn->reply_text ?? ''));
     }
@@ -139,6 +128,33 @@ class TurnOrchestrator
             'model_versions' => ['stt' => 'stub', 'llm' => 'stub', 'tts' => 'stub'],
             'metrics' => ['stt_ms' => 10, 'analysis_ms' => 5, 'llm_ms' => 10, 'tts_ms' => 10, 'total_ms' => 35],
         ];
+    }
+
+    private function callIntelligenceText(Turn $turn, AccompanimentSession $session, string $studentText): array
+    {
+        $base = rtrim((string) config('empathia.intelligence_url'), '/');
+        $payload = [
+            'request_id' => (string) Str::uuid(),
+            'session_id' => $session->id,
+            'turn_id' => $turn->id,
+            'student_id' => (string) $session->student_user_id,
+            'locale' => 'es',
+            'text' => $studentText,
+        ];
+
+        $response = Http::timeout(120)
+            ->connectTimeout(5)
+            ->withHeaders([
+                'X-Internal-Token' => config('empathia.intelligence_token'),
+                'Content-Type' => 'application/json',
+            ])
+            ->post($base.'/internal/v1/infer/turn', $payload);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('INTELLIGENCE_UNAVAILABLE HTTP '.$response->status().' '.$response->body());
+        }
+
+        return $response->json() ?? [];
     }
 
     private function callIntelligence(Turn $turn, AccompanimentSession $session, string $audioAbsolutePath, ?string $studentText = null): array
