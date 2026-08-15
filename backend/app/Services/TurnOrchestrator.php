@@ -13,6 +13,19 @@ class TurnOrchestrator
 {
     public function __construct(private SessionEventBus $events) {}
 
+    public function processTextTurn(Turn $turn, AccompanimentSession $session, string $studentText): void
+    {
+        $this->events->push($session, 'session.state', ['state' => 'processing']);
+        $this->events->push($session, 'turn.processing', [
+            'turn_id' => $turn->id,
+            'stage' => 'text',
+        ]);
+
+        $inference = $this->stubInference($turn, $session, $studentText);
+        $this->persistInference($turn, $session, $inference);
+        $this->pushTurnResult($turn, $session);
+    }
+
     public function processAcceptedTurn(Turn $turn, AccompanimentSession $session, string $audioAbsolutePath): void
     {
         $this->events->push($session, 'session.state', ['state' => 'processing']);
@@ -31,6 +44,11 @@ class TurnOrchestrator
             @unlink($audioAbsolutePath);
         }
 
+        $this->pushTurnResult($turn, $session);
+    }
+
+    private function pushTurnResult(Turn $turn, AccompanimentSession $session): void
+    {
         $ttsUrl = url('/api/v1/accompaniment/turns/'.$turn->id.'/audio/tts');
 
         $this->events->push($session, 'turn.result', [
@@ -56,7 +74,7 @@ class TurnOrchestrator
         $this->events->push($session, 'session.state', ['state' => 'speaking']);
     }
 
-    private function stubInference(Turn $turn, AccompanimentSession $session): array
+    private function stubInference(Turn $turn, AccompanimentSession $session, ?string $studentText = null): array
     {
         $fixturePath = base_path('../expresion/fixtures/paquete-expresion-ejemplo.json');
         $expression = is_file($fixturePath)
@@ -73,12 +91,19 @@ class TurnOrchestrator
         $outPath = $outDir.DIRECTORY_SEPARATOR.$turn->id.'.wav';
         $this->writeSilentWav($outPath);
 
+        $transcript = ($studentText !== null && $studentText !== '')
+            ? $studentText
+            : 'Hola, hoy me siento un poco cansado pero quiero hablar.';
+        $reply = ($studentText !== null && $studentText !== '')
+            ? 'Recibí tu mensaje: "'.$studentText.'". Estoy aquí para acompañarte. ¿Quieres contarme un poco más?'
+            : 'Gracias por contármelo. Estoy aquí para acompañarte. ¿Quieres contarme un poco más sobre cómo te ha ido el día?';
+
         return [
-            'transcript' => ['text' => 'Hola, hoy me siento un poco cansado pero quiero hablar.', 'confidence' => 0.9],
+            'transcript' => ['text' => $transcript, 'confidence' => 0.9],
             'emotion' => ['label' => 'sadness', 'confidence' => 0.62],
             'risk_signals' => [],
             'reply' => [
-                'text' => 'Gracias por contármelo. Estoy aquí para acompañarte. ¿Quieres contarme un poco más sobre cómo te ha ido el día?',
+                'text' => $reply,
                 'guardrail_flags' => [],
             ],
             'tts' => ['path' => $outPath, 'format' => 'wav', 'duration_ms' => $expression['duration_ms'] ?? 2400],

@@ -262,6 +262,84 @@ class EmpathiaController extends Controller
         ], 202);
     }
 
+    public function createTextTurn(Request $request, string $sessionId, TurnOrchestrator $orchestrator, SessionEventBus $events)
+    {
+        $session = AccompanimentSession::query()->findOrFail($sessionId);
+        $this->assertCanWriteSession($request->user(), $session);
+
+        if ($session->status !== 'active') {
+            return response()->json([
+                'error' => ['code' => 'VALIDATION_ERROR', 'message' => 'Session is not active'],
+            ], 422);
+        }
+
+        $data = $request->validate([
+            'text' => 'required|string|min:1|max:4000',
+            'client_turn_key' => 'required|uuid',
+        ]);
+
+        $existing = Turn::query()
+            ->where('session_id', $session->id)
+            ->where('client_turn_key', $data['client_turn_key'])
+            ->first();
+
+        if ($existing) {
+            return response()->json([
+                'turn' => [
+                    'id' => $existing->id,
+                    'session_id' => $existing->session_id,
+                    'sequence_no' => $existing->sequence_no,
+                    'status' => $existing->status,
+                    'client_turn_key' => $existing->client_turn_key,
+                ],
+            ], 202);
+        }
+
+        $sequence = (int) Turn::query()->where('session_id', $session->id)->max('sequence_no') + 1;
+        $turnId = (string) Str::uuid();
+
+        $turn = Turn::query()->create([
+            'id' => $turnId,
+            'session_id' => $session->id,
+            'sequence_no' => $sequence,
+            'client_turn_key' => $data['client_turn_key'],
+            'status' => 'accepted',
+            'transcript' => $data['text'],
+        ]);
+
+        $events->push($session, 'turn.accepted', [
+            'turn_id' => $turn->id,
+            'sequence_no' => $turn->sequence_no,
+            'client_turn_key' => $turn->client_turn_key,
+            'source' => 'text',
+        ]);
+
+        try {
+            $orchestrator->processTextTurn($turn, $session, $data['text']);
+        } catch (\Throwable $e) {
+            $turn->status = 'error';
+            $turn->save();
+            $events->push($session, 'turn.error', [
+                'turn_id' => $turn->id,
+                'code' => 'INTERNAL_ERROR',
+                'message' => $e->getMessage(),
+                'retryable' => true,
+            ]);
+        }
+
+        return response()->json([
+            'ok' => true,
+            'received_text' => $data['text'],
+            'turn' => [
+                'id' => $turn->id,
+                'session_id' => $turn->session_id,
+                'sequence_no' => $turn->sequence_no,
+                'status' => 'accepted',
+                'client_turn_key' => $turn->client_turn_key,
+            ],
+        ], 202);
+    }
+
     public function events(Request $request, string $sessionId, SessionEventBus $bus)
     {
         $session = AccompanimentSession::query()->findOrFail($sessionId);

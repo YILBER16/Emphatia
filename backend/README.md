@@ -53,7 +53,23 @@ Un **turno** es una ronda de conversación: el estudiante habla (audio) y el sis
    - `expression` — datos para animar la cara (rol D)
    - `tts.url` — audio de la respuesta
 
-Hoy A solo necesita login + sesión. El turno completo lo conectarás en Sprint 1 con B.
+### Enviar texto (sin audio)
+
+Endpoint **nuevo**, independiente del login:
+
+`POST /api/v1/accompaniment/sessions/{sessionId}/text`
+
+Requiere token (después de login) y una sesión activa.
+
+```powershell
+$headers = @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" }
+$body = '{"text":"Hola, me siento un poco cansado","client_turn_key":"550e8400-e29b-41d4-a716-446655440000"}'
+Invoke-RestMethod -Uri "http://192.168.1.58:8000/api/v1/accompaniment/sessions/$sessionId/text" -Method POST -Headers $headers -Body $body
+```
+
+Luego consulta events hasta `turn.result`. El `transcript` será el texto que envió A.
+
+Hoy A solo necesita login + sesión. El turno de audio lo conectarás en Sprint 2.
 
 ### ¿Qué es `INTEL_STUB`?
 
