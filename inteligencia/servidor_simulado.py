@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """EmpathIA Intelligence stub (module C) — Phase 0.
 
-Listens on 127.0.0.1:8100. No Whisper/Ollama/Kokoro.
+Listens on 0.0.0.0:8100 (LAN). Override with INTEL_HOST / INTEL_PORT.
 Implements internal InferTurn + health + memory stubs.
 """
 
@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-HOST = "127.0.0.1"
+HOST = os.environ.get("INTEL_HOST", "0.0.0.0")
 PORT = int(os.environ.get("INTEL_PORT", "8100"))
 INTERNAL_TOKEN = os.environ.get("INTEL_INTERNAL_TOKEN", "empathia-internal-dev-token")
 REPO_ROOT = Path(__file__).resolve().parents[1]

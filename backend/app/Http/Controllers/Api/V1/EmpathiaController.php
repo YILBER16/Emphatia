@@ -28,12 +28,19 @@ class EmpathiaController extends Controller
         }
 
         $intelOk = false;
+        $intelError = null;
+        $intelUrl = rtrim((string) config('empathia.intelligence_url'), '/').'/internal/v1/health';
         try {
-            $intelOk = Http::timeout(2)
+            $intelResponse = Http::timeout(5)
+                ->connectTimeout(3)
                 ->withHeaders(['X-Internal-Token' => config('empathia.intelligence_token')])
-                ->get(rtrim(config('empathia.intelligence_url'), '/').'/internal/v1/health')
-                ->successful();
-        } catch (\Throwable) {
+                ->get($intelUrl);
+            $intelOk = $intelResponse->successful();
+            if (! $intelOk) {
+                $intelError = 'HTTP '.$intelResponse->status();
+            }
+        } catch (\Throwable $e) {
+            $intelError = $e->getMessage();
             $intelOk = config('empathia.intel_stub') === true;
         }
 
@@ -50,6 +57,8 @@ class EmpathiaController extends Controller
                 'intelligence' => $intelOk,
                 'intel_stub' => (bool) config('empathia.intel_stub'),
             ],
+            'intelligence_url' => $intelUrl,
+            'intelligence_error' => $intelError,
         ]);
     }
 
