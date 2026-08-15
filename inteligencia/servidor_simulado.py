@@ -165,6 +165,26 @@ class Handler(BaseHTTPRequestHandler):
             turn_id = body.get("turn_id") or str(uuid.uuid4())
             request_id = body.get("request_id") or str(uuid.uuid4())
             audio_path = (body.get("audio") or {}).get("path") if isinstance(body.get("audio"), dict) else None
+            student_text = body.get("text") if isinstance(body.get("text"), str) else ""
+            student_text = student_text.strip()
+
+            if student_text:
+                print(f"[C] TEXTO de B session={body.get('session_id')} | {student_text}", flush=True)
+                transcript, stt_version, stt_ms = (
+                    {"text": student_text, "confidence": 1.0},
+                    "text-from-b",
+                    5,
+                )
+                reply_text = (
+                    f'Recibí tu mensaje: "{student_text}". '
+                    "Estoy aquí para acompañarte. ¿Quieres contarme un poco más?"
+                )
+            else:
+                transcript, stt_version, stt_ms = infer_transcript(audio_path)
+                reply_text = (
+                    "Gracias por contármelo. Estoy aquí para acompañarte. "
+                    "¿Quieres contarme un poco más sobre cómo te ha ido el día?"
+                )
 
             out_dir = DATA_ROOT / "audio" / "output" / str(body.get("session_id", "session"))
             out_dir.mkdir(parents=True, exist_ok=True)
@@ -185,7 +205,6 @@ class Handler(BaseHTTPRequestHandler):
                 for lip in expression.get("lips", [])
             ]
 
-            transcript, stt_version, stt_ms = infer_transcript(audio_path)
             analysis_ms = 20
             llm_ms = 80
             tts_ms = 40
@@ -197,10 +216,7 @@ class Handler(BaseHTTPRequestHandler):
                 "emotion": {"label": "sadness", "confidence": 0.62},
                 "risk_signals": [],
                 "reply": {
-                    "text": (
-                        "Gracias por contármelo. Estoy aquí para acompañarte. "
-                        "¿Quieres contarme un poco más sobre cómo te ha ido el día?"
-                    ),
+                    "text": reply_text,
                     "guardrail_flags": [],
                 },
                 "tts": {

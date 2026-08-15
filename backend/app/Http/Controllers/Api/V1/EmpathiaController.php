@@ -13,6 +13,7 @@ use App\Services\TurnOrchestrator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
@@ -62,7 +63,7 @@ class EmpathiaController extends Controller
         ]);
     }
 
-    public function login(Request $request)
+    public function login(Request $request, SessionEventBus $events)
     {
         $data = $request->validate([
             'username' => 'required|string',
@@ -75,6 +76,9 @@ class EmpathiaController extends Controller
                 'error' => ['code' => 'INVALID_CREDENTIALS', 'message' => 'Invalid username or password'],
             ], 401);
         }
+
+        $closed = $this->abortActiveSessions($events, 'login_refresh');
+        $this->console('[B] Login '.$user->username.' — sesiones activas cerradas: '.$closed);
 
         $plain = Str::random(48);
         ApiToken::query()->create([
@@ -89,6 +93,7 @@ class EmpathiaController extends Controller
             'token_type' => 'Bearer',
             'expires_at' => now()->addDays(7)->utc()->toIso8601String(),
             'user' => $this->userPayload($user),
+            'closed_active_sessions' => $closed,
         ]);
     }
 
@@ -117,12 +122,7 @@ class EmpathiaController extends Controller
             ], 403);
         }
 
-        $active = AccompanimentSession::query()->where('status', 'active')->exists();
-        if ($active) {
-            return response()->json([
-                'error' => ['code' => 'SESSION_ALREADY_ACTIVE', 'message' => 'Only one active session allowed on this node'],
-            ], 409);
-        }
+        $this->abortActiveSessions($events, 'replaced_on_create');
 
         $data = $request->validate([
             'locale' => 'sometimes|in:es',
@@ -149,6 +149,7 @@ class EmpathiaController extends Controller
             'locale' => $session->locale,
         ]);
         $events->push($session, 'session.state', ['state' => 'idle']);
+        $this->console('[B] Nueva sesión activa id='.$session->id);
 
         return response()->json([
             'session' => [
@@ -166,7 +167,7 @@ class EmpathiaController extends Controller
 
     public function getSession(Request $request, string $sessionId)
     {
-        $session = AccompanimentSession::query()->findOrFail($sessionId);
+        $session = $this->resolveSession($sessionId);
         $this->assertCanReadSession($request->user(), $session);
 
         return response()->json(['session' => $session]);
@@ -174,7 +175,7 @@ class EmpathiaController extends Controller
 
     public function closeSession(Request $request, string $sessionId, SessionEventBus $events)
     {
-        $session = AccompanimentSession::query()->findOrFail($sessionId);
+        $session = $this->resolveSession($sessionId);
         $this->assertCanWriteSession($request->user(), $session);
 
         $session->status = 'closed';
@@ -189,7 +190,7 @@ class EmpathiaController extends Controller
 
     public function createTurn(Request $request, string $sessionId, TurnOrchestrator $orchestrator, SessionEventBus $events)
     {
-        $session = AccompanimentSession::query()->findOrFail($sessionId);
+        $session = $this->resolveSession($sessionId);
         $this->assertCanWriteSession($request->user(), $session);
 
         if ($session->status !== 'active') {
@@ -273,7 +274,9 @@ class EmpathiaController extends Controller
 
     public function createTextTurn(Request $request, string $sessionId, TurnOrchestrator $orchestrator, SessionEventBus $events)
     {
-        $session = AccompanimentSession::query()->findOrFail($sessionId);
+        $this->console('[A→B TEXTO] petición recibida path='.$sessionId.' body='.$request->getContent());
+
+        $session = $this->resolveSession($sessionId);
         $this->assertCanWriteSession($request->user(), $session);
 
         if ($session->status !== 'active') {
@@ -286,6 +289,8 @@ class EmpathiaController extends Controller
             'text' => 'required|string|min:1|max:4000',
             'client_turn_key' => 'required|uuid',
         ]);
+
+        $this->console('[A→B TEXTO] session='.$session->id.' | '.$data['text']);
 
         $existing = Turn::query()
             ->where('session_id', $session->id)
@@ -351,7 +356,7 @@ class EmpathiaController extends Controller
 
     public function events(Request $request, string $sessionId, SessionEventBus $bus)
     {
-        $session = AccompanimentSession::query()->findOrFail($sessionId);
+        $session = $this->resolveSession($sessionId);
         $this->assertCanReadSession($request->user(), $session);
 
         $after = (int) $request->query('after', 0);
@@ -412,6 +417,46 @@ class EmpathiaController extends Controller
         $students = User::query()->where('role', 'student')->get(['id', 'username', 'display_name', 'role']);
 
         return response()->json(['data' => $students]);
+    }
+
+    private function console(string $message): void
+    {
+        $line = $message.PHP_EOL;
+        file_put_contents('php://stderr', $line);
+        Log::info($message);
+    }
+
+    private function resolveSession(string $sessionId): AccompanimentSession
+    {
+        if ($sessionId === 'active') {
+            $session = AccompanimentSession::query()
+                ->where('status', 'active')
+                ->orderByDesc('started_at')
+                ->first();
+            if (! $session) {
+                abort(response()->json([
+                    'error' => ['code' => 'NOT_FOUND', 'message' => 'No active session'],
+                ], 404));
+            }
+
+            return $session;
+        }
+
+        return AccompanimentSession::query()->findOrFail($sessionId);
+    }
+
+    private function abortActiveSessions(SessionEventBus $events, string $reason): int
+    {
+        $rows = AccompanimentSession::query()->where('status', 'active')->get();
+        foreach ($rows as $session) {
+            $session->status = 'closed';
+            $session->ended_at = now();
+            $session->save();
+            $events->push($session, 'session.closed', ['reason' => $reason]);
+            $events->push($session, 'session.state', ['state' => 'closed']);
+        }
+
+        return $rows->count();
     }
 
     private function userPayload(User $user): array
