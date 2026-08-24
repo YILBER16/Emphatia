@@ -11,3 +11,5 @@ Misión: [M2-A](../../missions/sprint-2/M2-A-turno-audio-ui.md)
 - [ ] APRENDIZAJE del turno actualizado  
 
 **Fecha:** ________ **Nombre:** ________
+
+> Código en `cliente-unity/avatar/Assets/Scripts/Empathia/` (rama `a/turno-audio-ui`). Marca en verde tras probar contra B.

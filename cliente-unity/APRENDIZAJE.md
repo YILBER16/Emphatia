@@ -1,6 +1,6 @@
 # Aprendizaje — Rol A (Avatar / Unity)
 
-**Misión actual:** M1-A · Login y sesión  
+**Misión actual:** M2-A · Turno con audio  
 **Carpeta de trabajo:** `cliente-unity/`
 
 ---
@@ -9,67 +9,81 @@
 
 Soy el **Rol A — Avatar**. Soy la cara del sistema EmpathIA: el estudiante me ve, me habla y me oye.
 
-En Unity me toca:
-
-- Pantalla de login y sesión
-- Captura de micrófono
-- Estados de UI (`idle` / `listening` / `processing` / `speaking`)
-- Reproducir el audio TTS de la respuesta
-- Aplicar el `ExpressionPacket` (labios y cara) que define D
-
-**No “pienso”.** No hago IA, STT, LLM ni TTS. Solo consumo lo que me entrega el **Servidor B** en `http://127.0.0.1:8000`.
+**No “pienso”.** Solo consumo lo que entrega el **Servidor B** (`:8000`). Nunca llamo a Inteligencia (`:8100`).
 
 ---
 
 ## Estructura
 
 ```text
-cliente-unity/
-├── APRENDIZAJE.md
-├── README.md
-└── avatar/                    ← proyecto Unity 6
-    └── Assets/Scripts/Empathia/
-        ├── EmpathiaAuthState.cs      ← token + session.id en memoria
-        ├── EmpathiaApiModels.cs      ← DTOs JSON
-        ├── EmpathiaApiClient.cs      ← HTTP a B (login / sesión / close)
-        └── LoginScreenController.cs  ← UI Sprint 1 (se monta sola)
+cliente-unity/avatar/Assets/Scripts/Empathia/
+├── EmpathiaAuthState.cs       ← token + session.id
+├── EmpathiaApiModels.cs       ← DTOs JSON
+├── EmpathiaApiClient.cs       ← login / sesión / turno / events / TTS
+├── EmpathiaWav.cs             ← WAV prueba + mic → bytes
+└── LoginScreenController.cs   ← UI (bootstrap al Play)
 ```
 
 ---
 
-## Sprint 1 — Login y sesión (flujo)
+## Pantalla de login (autenticación)
 
-1. B arriba: `cd backend` → `php artisan serve --host=127.0.0.1 --port=8000`
-2. Abrir `cliente-unity/avatar/` en Unity 6 y Play en cualquier escena.
-3. UI aparece sola (`LoginScreenController` bootstrap).
-4. **Entrar** con `estudiante1` / `password` → ver token parcial.
-5. **Crear sesión** → ver `session.id` (o mensaje si `SESSION_ALREADY_ACTIVE`).
-6. **Cerrar sesión** cuando haga falta.
+Escena: `avatar/Assets/Scenes/Login.unity`
 
-### Endpoints que uso (solo B)
+1. Abrir escena **Login** → **Play**
+2. Completar **Servidor**, **Usuario**, **Contraseña**
+3. Pulsar **Iniciar sesión**
+4. Éxito = mensaje *Login OK* + token parcial (nunca llamar a `:8100`)
+
+## Sprint 2 — Flujo del turno
+
+1. B arriba (LAN ejemplo): `http://192.168.1.58:8000/api/v1`  
+   En el PC de B: `php artisan serve --host=0.0.0.0 --port=8000`
+2. Escena Login → Play
+3. **Iniciar sesión** → **Crear sesión**
+4. **Turno WAV prueba** (o micrófono 3s)
+5. Poll de `GET .../events` hasta `turn.result` (o `turn.error` / timeout)
+6. Mostrar `reply_text` + reproducir TTS con Bearer
+
+### Estados UI
+
+`idle` → `listening` (preparar/grabar audio) → `processing` (upload + poll) → `speaking` (TTS) → `idle`
+
+### Endpoints (solo B)
 
 | Acción | Método |
 |--------|--------|
 | Login | `POST /api/v1/auth/login` |
-| Crear sesión | `POST /api/v1/accompaniment/sessions` + `Authorization: Bearer …` |
-| Cerrar sesión | `POST /api/v1/accompaniment/sessions/{id}/close` |
+| Sesión | `POST /api/v1/accompaniment/sessions` |
+| Turno | `POST .../sessions/{id}/turns` multipart (`audio` + `client_turn_key`) |
+| Events | `GET .../sessions/{id}/events?after=` |
+| TTS | `GET .../turns/{turnId}/audio/tts` + Bearer |
+| Cerrar | `POST .../sessions/{id}/close` |
 
-**Nunca** llamo a `http://127.0.0.1:8100` (Inteligencia / C).
+La URL de TTS se arma con el **mismo host** de la Base URL (evita `127.0.0.1` cuando B está en LAN).
 
-### Errores en español (vistos / esperados)
+### Errores
 
-| Situación | Mensaje UI |
-|-----------|------------|
-| B apagado | No se pudo conectar… ¿está encendido en :8000? |
-| Clave mal | Usuario o contraseña incorrectos. |
-| Sesión ya activa | Ya hay una sesión activa. Ciérrala… |
-| HTTP cleartext | Player Settings → Allow downloads over HTTP: Development Only (ya configurado) |
+| Situación | Qué hago |
+|-----------|----------|
+| Timeout sin result | Revisar poll/`after` con B; stub C / `INTEL_STUB` |
+| TTS 401 | Header Authorization en download |
+| SESSION_ALREADY_ACTIVE | Cerrar sesión y recrear |
+| Mic falla | Usar «Turno WAV prueba» |
 
-### Nota de prueba A↔B
+### Nota de prueba A↔B (turno)
 
-- **Fecha:** (completar al probar)
-- **Resultado:** pendiente de prueba con B arriba
-- **Si falla:** anotar código HTTP / `error.code` aquí
+- **Fecha:** 2026-08-11
+- **Base URL usada:** `http://192.168.1.58:8000/api/v1` (default en el cliente)
+- **Resultado:** login + sesión OK contra B en LAN
+- **UI:** responsiva (CanvasScaler + scroll + filas apiladas en pantallas estrechas)
+- **Si falla:** anotar `error.code` / mensaje UI
+
+---
+
+## Sprint 1 (hecho en código)
+
+Login + sesión + token parcial + errores en español.
 
 ---
 
@@ -77,15 +91,7 @@ cliente-unity/
 
 | Carpeta | Por qué |
 |---------|---------|
-| `servidor/` / `backend/` | Es de B |
-| `inteligencia/` | Es de C; **nunca** `:8100` |
+| `backend/` | Es de B |
+| `inteligencia/` | Es de C |
 | `expresion/` | Es de D |
 | `contratos/` | Solo con review |
-
----
-
-## Evidencia Sprint 0
-
-- [x] Unity Hub + Editor 6
-- [x] Proyecto en `cliente-unity/avatar/`
-- [x] `APRENDIZAJE.md` explicable en ~30 s

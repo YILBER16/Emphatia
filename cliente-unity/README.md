@@ -2,20 +2,22 @@
 
 Proyecto Unity 6 en `avatar/`.
 
-## Sprint 1 — Login y sesión
+## Pantalla de inicio de sesión
 
-1. Enciende B: `php artisan serve --host=127.0.0.1 --port=8000` (carpeta `backend/`).
-2. Abre `avatar/` en Unity Hub → Play.
-3. La UI de login aparece sola. Credenciales lab: `estudiante1` / `password`.
-4. Flujo: **Entrar** → ver token → **Crear sesión** → (opcional) **Cerrar sesión**.
+1. Abre el proyecto `avatar/` en **Unity Hub** (Unity 6).
+2. Abre la escena `Assets/Scenes/Login.unity`.
+3. En Hierarchy debe existir el objeto **EmpathiaLogin** (con `LoginScreenController`).
+4. Pulsa **Play** ▶ (la UI se crea en Play, no en edición).
+5. Debe aparecer la tarjeta **Inicio de sesión**. Si no, mira la Console por `[Empathia] LoginScreenController activo`.
+4. Servidor: `http://IP_DE_B:8000/api/v1` (ej. `http://192.168.1.58:8000/api/v1`).
+5. Usuario / contraseña lab: `estudiante1` / `password`.
+6. **Iniciar sesión** → debes ver **Login OK** y un token parcial.
 
-Scripts: `avatar/Assets/Scripts/Empathia/`.
+Scripts: `avatar/Assets/Scripts/Empathia/` (la UI se crea sola al dar Play).
 
-## Fase 0 (sin Unity)
+## Sprint 2 — Turno audio
 
-```powershell
-.\herramientas\prueba-humo-fase0.ps1
-```
+Tras el login: **Crear sesión** → **Turno WAV prueba** (o micrófono) → ver respuesta + TTS.
 
 ## Regla dura
 
