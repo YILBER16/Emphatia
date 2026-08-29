@@ -247,6 +247,7 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 if VERTEX_AI_ENABLED:
                     reply_text, llm_version, llm_ms = generate_vertex_reply(student_text)
+                    print(f"[C] GEMINI respuesta session={body.get('session_id')} | {reply_text}", flush=True)
                 else:
                     reply_text = (
                         f'Recibí tu mensaje: "{student_text}". '
