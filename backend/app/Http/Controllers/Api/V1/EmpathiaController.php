@@ -87,10 +87,13 @@ class EmpathiaController extends Controller
                 ]);
             if ($closed > 0) {
                 logger()->info('[B] Login '.$user->username.' — sesiones activas cerradas: '.$closed);
+                self::labLog('[B] Login '.$user->username.' — sesiones activas cerradas: '.$closed);
             }
         } catch (\Throwable $e) {
             report($e);
         }
+
+        self::labLog('[B] CONEXIÓN / Login OK user='.$user->username);
 
         return response()->json([
             'token' => $plain,
@@ -178,6 +181,7 @@ class EmpathiaController extends Controller
             $events->push($session, 'session.state', ['state' => 'idle']);
 
             logger()->info('[B] Nueva sesión activa id='.$session->id);
+            self::labLog('[B] Nueva sesión activa id='.$session->id);
 
             $startedAt = $session->started_at
                 ? $session->started_at->utc()->toIso8601String()
@@ -290,6 +294,7 @@ class EmpathiaController extends Controller
         }
 
         logger()->info('[A→B TEXTO] session='.$session->id.' | '.$message);
+        self::labLog('[A→B TEXTO] session='.$session->id.' | '.$message);
 
         $turnKey = $data['client_turn_key'] ?? (string) Str::uuid();
         $sequence = (int) Turn::query()->where('session_id', $session->id)->max('sequence_no') + 1;
@@ -389,6 +394,9 @@ class EmpathiaController extends Controller
         }
         $audioPath = $dir.DIRECTORY_SEPARATOR.$turnId.'.wav';
         $request->file('audio')->move($dir, $turnId.'.wav');
+
+        self::labLog('[A→B AUDIO] session='.$session->id.' turn='.$turnId.' | wav recibido, convirtiendo…');
+        logger()->info('[A→B AUDIO] session='.$session->id.' turn='.$turnId.' | wav recibido');
 
         $turn = Turn::query()->create([
             'id' => $turnId,
@@ -501,6 +509,35 @@ class EmpathiaController extends Controller
             'role' => $user->role,
             'username' => $user->username,
         ];
+    }
+
+    /** Alias usado en lab (mismo efecto que labLog). */
+    private function console(string $message): void
+    {
+        self::labLog($message);
+    }
+
+    /**
+     * Lab: visible en la misma consola que los POST de artisan serve (Windows).
+     * Escribe stdout + stderr + laravel.log.
+     */
+    public static function labLog(string $message): void
+    {
+        $line = $message.(str_ends_with($message, "\n") ? '' : "\n");
+        // stdout: en Windows + artisan serve es lo que suele verse junto a los POST.
+        @file_put_contents('php://stdout', $line);
+        try {
+            fwrite(\STDOUT, $line);
+        } catch (\Throwable) {
+            // ignore
+        }
+        @file_put_contents('php://stderr', $line);
+        try {
+            fwrite(\STDERR, $line);
+        } catch (\Throwable) {
+            // ignore
+        }
+        logger()->info($message);
     }
 
     private function assertCanReadSession(User $user, AccompanimentSession $session): void

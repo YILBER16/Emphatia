@@ -27,6 +27,11 @@ class TurnOrchestrator
 
         $this->persistInference($turn, $session, $inference);
 
+        $transcript = (string) ($turn->transcript ?? '');
+        \App\Http\Controllers\Api\V1\EmpathiaController::labLog(
+            '[A→B AUDIO→TEXTO] session='.$session->id.' turn='.$turn->id.' | '.$transcript
+        );
+
         if (config('empathia.audio_retention') === 'R1' && is_file($audioAbsolutePath)) {
             @unlink($audioAbsolutePath);
         }

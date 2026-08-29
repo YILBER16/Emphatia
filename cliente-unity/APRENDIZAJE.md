@@ -1,4 +1,4 @@
-# Aprendizaje — Rol A (Avatar / Unity)
+﻿# Aprendizaje — Rol A (Avatar / Unity)
 
 **Misión actual:** M2-A · Turno con audio  
 **Carpeta de trabajo:** `cliente-unity/`
@@ -37,7 +37,7 @@ Escena: `avatar/Assets/Scenes/Login.unity`
 
 ## Sprint 2 — Flujo del turno
 
-1. B arriba (LAN ejemplo): `http://192.168.1.58:8000/api/v1`  
+1. B arriba (LAN ejemplo): `http://192.168.1.69:8000/api/v1`  
    En el PC de B: `php artisan serve --host=0.0.0.0 --port=8000`
 2. Escena Login → Play
 3. **Iniciar sesión** → **Crear sesión**
@@ -74,7 +74,7 @@ La URL de TTS se arma con el **mismo host** de la Base URL (evita `127.0.0.1` cu
 ### Nota de prueba A↔B (turno)
 
 - **Fecha:** 2026-08-11
-- **Base URL usada:** `http://192.168.1.58:8000/api/v1` (default en el cliente)
+- **Base URL usada:** `http://192.168.1.69:8000/api/v1` (default en el cliente)
 - **Resultado:** login + sesión OK contra B en LAN
 - **UI:** responsiva (CanvasScaler + scroll + filas apiladas en pantallas estrechas)
 - **Si falla:** anotar `error.code` / mensaje UI
