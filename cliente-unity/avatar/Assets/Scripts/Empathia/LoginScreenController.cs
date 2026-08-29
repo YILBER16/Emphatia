@@ -433,7 +433,7 @@ namespace Empathia
         {
             if (_busy) return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://192.168.1.58:8000/api/v1"
+                ? "http://192.168.1.69:8000/api/v1"
                 : _baseUrl.text.Trim();
             StartCoroutine(CheckConnectionToB(silent: false));
         }
@@ -994,7 +994,7 @@ namespace Empathia
         {
             if (_busy) return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://192.168.1.58:8000/api/v1"
+                ? "http://192.168.1.69:8000/api/v1"
                 : _baseUrl.text.Trim();
 
             SetBusy(true);
