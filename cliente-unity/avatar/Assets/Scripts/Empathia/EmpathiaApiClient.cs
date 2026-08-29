@@ -523,6 +523,45 @@ namespace Empathia
 
             onStatus?.Invoke("Audio enviado. Convirtiendo a texto…");
 
+            TurnResultInfo result = null;
+            var pollMsg = "";
+            var pollOk = false;
+            yield return PollTurnResult(turnId, onStatus, (ok, info, msg) =>
+            {
+                pollOk = ok;
+                result = info;
+                pollMsg = msg;
+            });
+
+            if (!pollOk || result == null)
+            {
+                onDone(false, null, pollMsg);
+                yield break;
+            }
+
+            if (result.IsError)
+            {
+                onDone(false, result, MapTurnError(result.ErrorCode, result.ErrorMessage));
+                yield break;
+            }
+
+            onDone(true, result, "turn.result OK");
+        }
+
+        /// <summary>
+        /// Tras POST /active/text (o /turns), espera turn.result / turn.error en GET .../events.
+        /// </summary>
+        public IEnumerator PollTurnResult(
+            string turnId,
+            Action<string> onStatus,
+            Action<bool, TurnResultInfo, string> onDone)
+        {
+            if (!EmpathiaAuthState.HasToken || !EmpathiaAuthState.HasSession)
+            {
+                onDone(false, null, "Necesitas login y sesión para leer /events.");
+                yield break;
+            }
+
             long after = 0;
             var elapsed = 0f;
             TurnResultInfo result = null;
@@ -607,13 +646,7 @@ namespace Empathia
                 yield break;
             }
 
-            if (result.IsError)
-            {
-                onDone(false, result, MapTurnError(result.ErrorCode, result.ErrorMessage));
-                yield break;
-            }
-
-            onDone(true, result, "turn.result OK");
+            onDone(true, result, result.IsError ? "turn.error" : "turn.result OK");
         }
 
         public IEnumerator DownloadAndPlayTts(string ttsUrl, AudioSource audioSource, Action<bool, string> onDone)
@@ -706,7 +739,7 @@ namespace Empathia
                 yield return req.SendWebRequest();
 
                 var code = req.responseCode;
-                var text = req.downloadHandler != null ? req.downloadHandler.text : string.Empty;
+                var text = EmpathiaText.FromHttpBody(req.downloadHandler != null ? req.downloadHandler.data : null);
 
                 // 202 Accepted es éxito
                 if (code >= 200 && code < 300)
@@ -740,7 +773,7 @@ namespace Empathia
                 yield return req.SendWebRequest();
 
                 var code = req.responseCode;
-                var text = req.downloadHandler != null ? req.downloadHandler.text : string.Empty;
+                var text = EmpathiaText.FromHttpBody(req.downloadHandler != null ? req.downloadHandler.data : null);
 
                 if (code == 0)
                 {
@@ -828,7 +861,7 @@ namespace Empathia
                 yield return req.SendWebRequest();
 
                 var code = req.responseCode;
-                var text = req.downloadHandler != null ? req.downloadHandler.text : string.Empty;
+                var text = EmpathiaText.FromHttpBody(req.downloadHandler != null ? req.downloadHandler.data : null);
 
 #if UNITY_2020_2_OR_NEWER
                 var failed = req.result != UnityWebRequest.Result.Success;
