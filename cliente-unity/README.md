@@ -1,4 +1,4 @@
-﻿# Cliente Unity (módulo A)
+# Cliente Unity (módulo A)
 
 Proyecto Unity 6 en `avatar/`.
 
@@ -9,7 +9,7 @@ Proyecto Unity 6 en `avatar/`.
 3. En Hierarchy debe existir el objeto **EmpathiaLogin** (con `LoginScreenController`).
 4. Pulsa **Play** ▶ (la UI se crea en Play, no en edición).
 5. Debe aparecer la tarjeta **Inicio de sesión**. Si no, mira la Console por `[Empathia] LoginScreenController activo`.
-4. Servidor: `http://IP_DE_B:8000/api/v1` (ej. `http://192.168.1.69:8000/api/v1`).
+4. Servidor: `http://IP_DE_B:8000/api/v1` (ej. `http://192.168.1.58:8000/api/v1`).
 5. Usuario / contraseña lab: `estudiante1` / `password`.
 6. **Iniciar sesión** → debes ver **Login OK** y un token parcial.
 

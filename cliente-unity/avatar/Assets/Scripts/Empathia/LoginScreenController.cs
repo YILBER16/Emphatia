@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections;
 using TMPro;
 using UnityEngine;
@@ -15,7 +15,7 @@ namespace Empathia
     /// </summary>
     public class LoginScreenController : MonoBehaviour
     {
-        const int MaxMicSeconds = 12;
+        const int MaxMicSeconds = 300;
         const int MicSampleRate = 16000;
         const float RefW = 1920f;
         const float RefH = 1080f;
@@ -433,14 +433,8 @@ namespace Empathia
         {
             if (_busy) return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://192.168.1.69:8000/api/v1"
+                ? "http://192.168.1.58:8000/api/v1"
                 : _baseUrl.text.Trim();
-            if (EmpathiaAuthState.BaseUrl.IndexOf("0.0.0.0", StringComparison.Ordinal) >= 0)
-            {
-                EmpathiaAuthState.BaseUrl = "http://192.168.1.69:8000/api/v1";
-                if (_baseUrl != null) _baseUrl.text = EmpathiaAuthState.BaseUrl;
-                SetLoginStatus("0.0.0.0 no es URL de cliente. Usando http://192.168.1.69:8000/api/v1");
-            }
             StartCoroutine(CheckConnectionToB(silent: false));
         }
 
@@ -532,7 +526,7 @@ namespace Empathia
             AddLabel(content.transform, "Pestaña Salud", 13, FontStyles.Bold, Purple, 18, TextAlignmentOptions.Center);
             _welcomeTitle = AddLabel(content.transform, "¡Bienvenido!", 34, FontStyles.Bold, Navy, 44, TextAlignmentOptions.Center);
             _welcomeSub = AddLabel(content.transform, "Este es tu espacio de acompañamiento emocional.", 16, FontStyles.Normal, Muted, 28, TextAlignmentOptions.Center);
-            _recordHint = AddLabel(content.transform, "Grabar = audio → B (sin esperar respuesta)", 14, FontStyles.Normal, Muted, 24, TextAlignmentOptions.Center);
+            _recordHint = AddLabel(content.transform, "Grabar = voz→texto local → POST /active/text", 14, FontStyles.Normal, Muted, 24, TextAlignmentOptions.Center);
 
             _recordBtn = AddGradientButton(content.transform, "Grabar audio", 72, OnRecordPressed, 22f);
             var textTf = _recordBtn.transform.Find("Text");
@@ -590,8 +584,8 @@ namespace Empathia
 
             if (_recordHint != null)
                 _recordHint.text = recording
-                    ? "Grabando… Detener envía a B"
-                    : "Grabar = solo envía audio a B. Texto escrito = /active/text";
+                    ? "Escuchando… Detener envía /active/text"
+                    : "Grabar = voz→texto → POST /active/text";
         }
 
         void ShowScreen(UiScreen screen)
@@ -610,7 +604,7 @@ namespace Empathia
             if (_welcomeTitle != null)
                 _welcomeTitle.text = "¡Bienvenido, " + name + "!";
             if (_welcomeSub != null)
-                _welcomeSub.text = "Grabar envía audio a B. No esperamos respuesta por ahora.";
+                _welcomeSub.text = "Login + sesión + texto a B (/sessions/active/text).";
             SetTranscript("(aún no hay)");
             SetReply("(sin respuesta)");
             SetStatus("Listo. Graba o escribe un mensaje para B.");
@@ -1000,16 +994,8 @@ namespace Empathia
         {
             if (_busy) return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://192.168.1.69:8000/api/v1"
+                ? "http://192.168.1.58:8000/api/v1"
                 : _baseUrl.text.Trim();
-            // 0.0.0.0 es solo bind de artisan; el cliente debe usar la IP LAN de B.
-            if (EmpathiaAuthState.BaseUrl.IndexOf("0.0.0.0", StringComparison.Ordinal) >= 0)
-            {
-                EmpathiaAuthState.BaseUrl = "http://192.168.1.69:8000/api/v1";
-                if (_baseUrl != null) _baseUrl.text = EmpathiaAuthState.BaseUrl;
-                SetLoginStatus("0.0.0.0 no sirve como URL de cliente. Usando http://192.168.1.69:8000/api/v1");
-                return;
-            }
 
             SetBusy(true);
             SetLoginStatus("Autenticando contra B…");
@@ -1034,60 +1020,24 @@ namespace Empathia
         {
             if (_busy || _recording) yield break;
 
+            if (_localStt == null)
+                _localStt = GetComponent<EmpathiaLocalStt>() ?? gameObject.AddComponent<EmpathiaLocalStt>();
+
+            // 1) Capturar texto local (Windows STT) para enviarlo a B /active/text
             _stopRecording = false;
             SetRecordButtonUi(true);
             SetState("listening");
-            SetTranscript("(grabando… habla y Detener)");
+            SetTranscript("(habla ahora…)");
             SetReply("(sin respuesta)");
-            SetStatus("Permiso de micrófono…");
+            SetStatus("Habla y toca Detener → se envía texto a B");
 
-            if (!Application.HasUserAuthorization(UserAuthorization.Microphone))
-                yield return Application.RequestUserAuthorization(UserAuthorization.Microphone);
-
-            if (!Application.HasUserAuthorization(UserAuthorization.Microphone))
+            if (!_localStt.StartListening())
             {
                 SetRecordButtonUi(false);
                 SetBusy(false);
                 SetState("idle");
-                SetStatus("Sin permiso de mic. Usa Enviar texto a B.");
-                yield break;
-            }
-
-            var devices = Microphone.devices;
-            if (devices == null || devices.Length == 0)
-            {
-                SetRecordButtonUi(false);
-                SetBusy(false);
-                SetState("idle");
-                SetStatus("No hay micrófono. Usa Enviar texto a B.");
-                yield break;
-            }
-
-            var device = devices[0];
-            Debug.Log("[Empathia] Grabando mic='" + device + "' → B /turns");
-
-            AudioClip clip = null;
-            try
-            {
-                if (Microphone.IsRecording(device))
-                    Microphone.End(device);
-                clip = Microphone.Start(device, false, MaxMicSeconds + 1, MicSampleRate);
-            }
-            catch (Exception ex)
-            {
-                SetRecordButtonUi(false);
-                SetBusy(false);
-                SetState("idle");
-                SetStatus("No se pudo abrir el mic: " + ex.Message);
-                yield break;
-            }
-
-            if (clip == null)
-            {
-                SetRecordButtonUi(false);
-                SetBusy(false);
-                SetState("idle");
-                SetStatus("Microphone.Start falló.");
+                SetStatus("STT local no inició. Puedes escribir abajo y pulsar Enviar texto a B.");
+                Debug.LogWarning("[Empathia] STT local: " + (_localStt.LastError ?? "fail"));
                 yield break;
             }
 
@@ -1095,124 +1045,35 @@ namespace Empathia
             _busy = false;
             if (_recordBtn != null) _recordBtn.interactable = true;
 
-            // Esperar buffer
-            var warm = Time.realtimeSinceStartup;
-            while (Time.realtimeSinceStartup - warm < 0.2f)
-                yield return null;
-
             var started = Time.realtimeSinceStartup;
-            var peak = 0f;
-            while (!_stopRecording && (Time.realtimeSinceStartup - started) < MaxMicSeconds)
-            {
-                var pos = Microphone.GetPosition(device);
-                if (pos > 256)
+            yield return _localStt.ListenUntil(
+                () => _stopRecording || (Time.realtimeSinceStartup - started) >= MaxMicSeconds - 0.25f,
+                MaxMicSeconds,
+                live =>
                 {
-                    var samples = new float[256];
-                    var start = Mathf.Max(0, pos - samples.Length);
-                    if (clip.GetData(samples, start))
-                    {
-                        for (var i = 0; i < samples.Length; i++)
-                        {
-                            var a = Mathf.Abs(samples[i]);
-                            if (a > peak) peak = a;
-                        }
-                    }
-                }
-
-                var pct = Mathf.Clamp01(peak * 8f) * 100f;
-                var t = Time.realtimeSinceStartup - started;
-                SetTranscript("Grabando " + t.ToString("0.0") + " s · mic " + pct.ToString("0") + "%");
-                SetStatus("Habla… Detener (máx " + MaxMicSeconds + " s)");
-                yield return null;
-            }
-
-            var samplesRecorded = 0;
-            try
-            {
-                samplesRecorded = Microphone.GetPosition(device);
-            }
-            catch
-            {
-                samplesRecorded = clip.samples;
-            }
-
-            try
-            {
-                if (Microphone.IsRecording(device))
-                    Microphone.End(device);
-            }
-            catch
-            {
-                // ignore
-            }
+                    SetTranscript(live);
+                    SetStatus("Local… " + (Time.realtimeSinceStartup - started).ToString("0") + " s — Detener");
+                });
 
             _recording = false;
             _stopRecording = false;
             SetRecordButtonUi(false);
             SetBusy(true);
 
-            if (samplesRecorded < MicSampleRate / 5 || peak < 0.004f)
+            var spoken = _localStt.CurrentBestText();
+            if (string.IsNullOrWhiteSpace(spoken))
             {
                 SetBusy(false);
                 SetState("idle");
-                SetTranscript("(audio muy corto / silencioso)");
-                SetStatus("No hubo audio útil. Habla más cerca o usa Enviar texto a B.");
+                SetTranscript("(sin texto)");
+                SetStatus("Sin texto. Habla más claro o escribe el mensaje y usa Enviar texto a B.");
+                Debug.LogWarning("[Empathia] Texto vacío; no hay POST /active/text.");
                 yield break;
             }
 
-            var wav = EmpathiaWav.FromMicrophoneClip(clip, samplesRecorded, MicSampleRate);
-            Debug.Log("[Empathia] WAV bytes=" + wav.Length + " peak=" + peak);
-
-            if (!EmpathiaAuthState.HasSession)
-            {
-                SetStatus("Creando sesión en B…");
-                var sessionOk = false;
-                var sessionMsg = "";
-                yield return _api.CreateSession((ok, msg) =>
-                {
-                    sessionOk = ok;
-                    sessionMsg = msg;
-                });
-                if (!sessionOk || !EmpathiaAuthState.HasSession)
-                {
-                    SetBusy(false);
-                    SetState("idle");
-                    SetStatus("Sin sesión B: " + sessionMsg);
-                    yield break;
-                }
-            }
-
-            SetState("processing");
-            SetTranscript("(enviando audio a B…)");
-            SetReply("(no esperamos respuesta)");
-            SetStatus("Subiendo audio a B…");
-
-            var sendOk = false;
-            var sendMsg = "";
-            yield return _api.UploadTurnAudio(
-                wav,
-                status => SetStatus(status),
-                (ok, msg) =>
-                {
-                    sendOk = ok;
-                    sendMsg = msg;
-                });
-
-            if (!sendOk)
-            {
-                SetBusy(false);
-                SetState("idle");
-                SetStatus("No se envió a B: " + sendMsg);
-                Debug.LogWarning("[Empathia] UploadTurnAudio: " + sendMsg);
-                yield break;
-            }
-
-            SetTranscript("Audio enviado (" + wav.Length + " bytes)");
-            SetReply("(mira la consola de B)");
-            SetStatus("Listo. En consola de B: [A→B AUDIO→TEXTO] …");
-            Debug.Log("[Empathia] " + sendMsg + " — el texto sale en artisan serve de B");
-            SetBusy(false);
-            SetState("idle");
+            SetTranscript(spoken);
+            Debug.Log("[Empathia] Texto a enviar a B: " + spoken);
+            yield return EnsureSessionAndPostText(spoken);
         }
 
         IEnumerator EnsureSessionAndPostText(string message)

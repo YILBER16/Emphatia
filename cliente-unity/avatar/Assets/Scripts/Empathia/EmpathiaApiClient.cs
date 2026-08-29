@@ -13,7 +13,7 @@ namespace Empathia
     public class EmpathiaApiClient : MonoBehaviour
     {
         const float PollIntervalSeconds = 0.5f;
-        const float TurnTimeoutSeconds = 25f;
+        const float TurnTimeoutSeconds = 45f;
 
         public IEnumerator CheckHealth(Action<bool, string> onDone)
         {
@@ -469,67 +469,6 @@ namespace Empathia
 
                     onDone(true, text, parsed);
                 });
-        }
-
-        /// <summary>
-        /// Solo sube el WAV a B (POST /turns). No espera transcript ni TTS.
-        /// B/C convierten a texto en su lado.
-        /// </summary>
-        public IEnumerator UploadTurnAudio(byte[] wavBytes, Action<string> onStatus, Action<bool, string> onDone)
-        {
-            if (!EmpathiaAuthState.HasToken || !EmpathiaAuthState.HasSession)
-            {
-                onDone(false, "Necesitas login y sesión activa.");
-                yield break;
-            }
-
-            if (wavBytes == null || wavBytes.Length < 44)
-            {
-                onDone(false, "Audio vacío.");
-                yield break;
-            }
-
-            var clientTurnKey = Guid.NewGuid().ToString();
-            var turnUrl = EmpathiaAuthState.BaseUrl.TrimEnd('/')
-                          + "/accompaniment/sessions/"
-                          + EmpathiaAuthState.SessionId
-                          + "/turns";
-
-            onStatus?.Invoke("Enviando audio a B…");
-            var uploadError = "";
-            var turnId = "";
-
-            yield return PostTurnMultipart(turnUrl, wavBytes, clientTurnKey, (ok, code, text) =>
-            {
-                if (!ok)
-                {
-                    uploadError = MapError(code, text, "No se pudo enviar el audio.");
-                    return;
-                }
-
-                try
-                {
-                    var parsed = JsonUtility.FromJson<CreateTurnResponse>(text);
-                    if (parsed != null && parsed.turn != null)
-                        turnId = parsed.turn.id ?? "";
-                }
-                catch
-                {
-                    // ignore
-                }
-            });
-
-            if (!string.IsNullOrEmpty(uploadError))
-            {
-                onDone(false, uploadError);
-                yield break;
-            }
-
-            var msg = string.IsNullOrEmpty(turnId)
-                ? "Audio enviado a B."
-                : "Audio enviado a B (turn=" + turnId + ").";
-            onStatus?.Invoke(msg);
-            onDone(true, msg);
         }
 
         /// <summary>
