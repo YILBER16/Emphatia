@@ -511,19 +511,33 @@ class EmpathiaController extends Controller
         ];
     }
 
-    /** Alias lab. */
+    /** Alias usado en lab (mismo efecto que labLog). */
     private function console(string $message): void
     {
         self::labLog($message);
     }
 
     /**
-     * Lab: laravel.log + lab-terminal.log (+ intento stdout/stderr).
-     * En Windows usa: powershell -File serve-lab.ps1
+     * Lab: visible en la misma consola que los POST de artisan serve (Windows).
+     * Escribe stdout + stderr + laravel.log.
      */
     public static function labLog(string $message): void
     {
-        \App\Support\LabTerminal::write($message);
+        $line = $message.(str_ends_with($message, "\n") ? '' : "\n");
+        // stdout: en Windows + artisan serve es lo que suele verse junto a los POST.
+        @file_put_contents('php://stdout', $line);
+        try {
+            fwrite(\STDOUT, $line);
+        } catch (\Throwable) {
+            // ignore
+        }
+        @file_put_contents('php://stderr', $line);
+        try {
+            fwrite(\STDERR, $line);
+        } catch (\Throwable) {
+            // ignore
+        }
+        logger()->info($message);
     }
 
     private function assertCanReadSession(User $user, AccompanimentSession $session): void
