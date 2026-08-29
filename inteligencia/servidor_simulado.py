@@ -19,6 +19,11 @@ from urllib.parse import urlparse
 HOST = os.environ.get("INTEL_HOST", "0.0.0.0")
 PORT = int(os.environ.get("INTEL_PORT", "8100"))
 INTERNAL_TOKEN = os.environ.get("INTEL_INTERNAL_TOKEN", "empathia-internal-dev-token")
+VERTEX_AI_ENABLED = os.environ.get("VERTEX_AI_ENABLED", "false").lower() in {"1", "true", "yes"}
+VERTEX_AI_PROJECT = os.environ.get("VERTEX_AI_PROJECT", "")
+VERTEX_AI_LOCATION = os.environ.get("VERTEX_AI_LOCATION", "us-central1")
+VERTEX_AI_MODEL = os.environ.get("VERTEX_AI_MODEL", "gemini-2.5-flash")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_ROOT = Path(os.environ.get("EMPATHIA_DATA_ROOT", str(REPO_ROOT / "datos")))
 FIXTURE_EXPRESSION = REPO_ROOT / "expresion" / "fixtures" / "paquete-expresion-ejemplo.json"
@@ -45,6 +50,64 @@ def read_json(handler: BaseHTTPRequestHandler) -> dict:
 
 def authorized(handler: BaseHTTPRequestHandler) -> bool:
     return handler.headers.get("X-Internal-Token") == INTERNAL_TOKEN
+
+
+def vertex_health() -> dict:
+    missing = []
+    authentication = "api_key" if GOOGLE_API_KEY else "application_default_credentials"
+    if not GOOGLE_API_KEY:
+        if not VERTEX_AI_PROJECT:
+            missing.append("VERTEX_AI_PROJECT")
+        if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+            missing.append("GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_API_KEY")
+
+    return {
+        "enabled": VERTEX_AI_ENABLED,
+        "configured": VERTEX_AI_ENABLED and not missing,
+        "authentication": authentication,
+        "project": VERTEX_AI_PROJECT or None,
+        "location": VERTEX_AI_LOCATION,
+        "model": VERTEX_AI_MODEL,
+        "missing": missing,
+    }
+
+
+def generate_vertex_reply(student_text: str) -> tuple[str, str, int]:
+    if not VERTEX_AI_ENABLED:
+        raise RuntimeError("VERTEX_AI_DISABLED")
+
+    started = time.perf_counter()
+    from google import genai
+
+    if GOOGLE_API_KEY:
+        client = genai.Client(api_key=GOOGLE_API_KEY)
+        llm_version = f"gemini-api-key:{VERTEX_AI_MODEL}"
+    else:
+        if not VERTEX_AI_PROJECT:
+            raise RuntimeError("VERTEX_AI_PROJECT is required when GOOGLE_API_KEY is not set")
+        client = genai.Client(
+            vertexai=True,
+            project=VERTEX_AI_PROJECT,
+            location=VERTEX_AI_LOCATION,
+        )
+        llm_version = f"vertex:{VERTEX_AI_MODEL}"
+    prompt = (
+        "Eres EmpathIA, un asistente de acompanamiento estudiantil. "
+        "Responde en espanol, con empatia, en un maximo de tres frases. "
+        "No diagnostiques ni hagas promesas. Si existe riesgo inmediato, "
+        "recomienda contactar a un adulto responsable o a emergencias locales.\n\n"
+        f"Mensaje del estudiante: {student_text}"
+    )
+    response = client.models.generate_content(
+        model=VERTEX_AI_MODEL,
+        contents=prompt,
+    )
+    reply_text = (response.text or "").strip()
+    if not reply_text:
+        raise RuntimeError("VERTEX_EMPTY_RESPONSE")
+
+    elapsed_ms = max(1, int((time.perf_counter() - started) * 1000))
+    return reply_text, llm_version, elapsed_ms
 
 
 def _get_whisper_model():
@@ -116,6 +179,7 @@ class Handler(BaseHTTPRequestHandler):
                     "message": "Stub activo. Usa GET /internal/v1/health para health.",
                     "endpoints": [
                         "/internal/v1/health",
+                        "/internal/v1/vertex/health",
                         "/internal/v1/infer/turn",
                         "/internal/v1/memory/prepare",
                         "/internal/v1/memory/purge",
@@ -137,6 +201,12 @@ class Handler(BaseHTTPRequestHandler):
                     },
                 },
             )
+            return
+        if path == "/internal/v1/vertex/health":
+            if not authorized(self):
+                json_response(self, 401, {"error": {"code": "UNAUTHORIZED", "message": "Invalid internal token"}})
+                return
+            json_response(self, 200, {"status": "ok", "vertex": vertex_health()})
             return
         json_response(self, 404, {"error": {"code": "NOT_FOUND", "message": path}})
 
@@ -175,16 +245,23 @@ class Handler(BaseHTTPRequestHandler):
                     "text-from-b",
                     5,
                 )
-                reply_text = (
-                    f'Recibí tu mensaje: "{student_text}". '
-                    "Estoy aquí para acompañarte. ¿Quieres contarme un poco más?"
-                )
+                if VERTEX_AI_ENABLED:
+                    reply_text, llm_version, llm_ms = generate_vertex_reply(student_text)
+                else:
+                    reply_text = (
+                        f'Recibí tu mensaje: "{student_text}". '
+                        "Estoy aquí para acompañarte. ¿Quieres contarme un poco más?"
+                    )
+                    llm_version = "stub-ollama"
+                    llm_ms = 80
             else:
                 transcript, stt_version, stt_ms = infer_transcript(audio_path)
                 reply_text = (
                     "Gracias por contármelo. Estoy aquí para acompañarte. "
                     "¿Quieres contarme un poco más sobre cómo te ha ido el día?"
                 )
+                llm_version = "stub-ollama"
+                llm_ms = 80
 
             out_dir = DATA_ROOT / "audio" / "output" / str(body.get("session_id", "session"))
             out_dir.mkdir(parents=True, exist_ok=True)
@@ -206,7 +283,6 @@ class Handler(BaseHTTPRequestHandler):
             ]
 
             analysis_ms = 20
-            llm_ms = 80
             tts_ms = 40
             total_ms = stt_ms + analysis_ms + llm_ms + tts_ms
 
@@ -229,7 +305,7 @@ class Handler(BaseHTTPRequestHandler):
                 "memory": {"updated": True},
                 "model_versions": {
                     "stt": stt_version,
-                    "llm": "stub-ollama",
+                    "llm": llm_version,
                     "tts": "stub-kokoro",
                 },
                 "metrics": {
