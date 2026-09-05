@@ -9,7 +9,7 @@ namespace Empathia
     {
         const string PrefSessionId = "Empathia.LastSessionId";
 
-        public static string BaseUrl { get; set; } = "http://192.168.1.58:8000/api/v1";
+        public static string BaseUrl { get; set; } = "http://192.168.1.69:8000/api/v1";
         public static string Token { get; set; }
         public static string Username { get; set; }
 
