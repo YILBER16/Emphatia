@@ -42,6 +42,9 @@ Escena: `avatar/Assets/Scenes/Login.unity`
 
 Los perfiles los crea el admin en B (`POST /api/v1/admin/students`).
 
+Demo API (B): `.\herramientas\demo-perfiles-estudiante.ps1`  
+Checklist: `documentacion/aprendizaje/checklists/fase-perfiles/checklist-fase-5-demo.md`
+
 ## Sprint 2 — Flujo del turno
 
 1. B arriba (LAN ejemplo): `http://192.168.1.58:8000/api/v1`  

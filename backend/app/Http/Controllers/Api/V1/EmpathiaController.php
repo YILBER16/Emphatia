@@ -249,9 +249,12 @@ class EmpathiaController extends Controller
 
     /**
      * Alias Unity: acepta text/message y client_turn_key opcional, luego orquesta vía C.
+     * Soporta /sessions/active/text (sin {sessionId}) y /sessions/{sessionId}/text.
      */
-    public function postSessionText(Request $request, string $sessionId, TurnOrchestrator $orchestrator, SessionEventBus $events)
+    public function postSessionText(Request $request, TurnOrchestrator $orchestrator, SessionEventBus $events, ?string $sessionId = null)
     {
+        $sessionId = $sessionId ?: 'active';
+
         if (! $request->filled('text') && $request->filled('message')) {
             $request->merge(['text' => $request->input('message')]);
         }

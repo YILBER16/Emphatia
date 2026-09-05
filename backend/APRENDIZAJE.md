@@ -72,11 +72,7 @@ Decisiones cerradas: [ADR-009](../documentacion/decisiones/ADR-009-perfiles-estu
 
 Campos del perfil: nombres, apellidos, nombre de preferencia, grado, edad, sede, jornada, documento, teléfono y documento del acudiente, `access_code` regenerable, `is_active`.
 
-**Fase 1 hecha:** tabla `student_profiles`, modelo + relación `User::studentProfile()`, seed demo (`access_code=DEMO01`).  
-**Fase 2 hecha:** API admin `/api/v1/admin/students` (CRUD, regenerar código, desactivar). Solo rol `admin`.  
-**Fase 3 hecha:** `GET /students` (lista activa) + `POST /students/{id}/assume` (token estudiante para Unity).  
-**Fase 4 hecha:** UI Unity — login adulto → lista → assume → sesión (demo `estudiante1` sigue disponible).  
-**Próximo:** Fase 5 — demo integrado y docs finales.
+**Fases 0–5 hechas** (ADR-009): perfiles sin password del estudiante, API admin, assume, UI Unity, demo `herramientas/demo-perfiles-estudiante.ps1`.
 
 ## Cómo arrancar
 

@@ -2,7 +2,7 @@
 
 ## Estado
 
-Aceptado (acuerdos Fase 0 — 2026-09-05). Fases 1–4 implementadas; pendiente Fase 5 (demo cerrado / docs A).
+Aceptado e implementado (Fases 0–5 — 2026-09-05).
 
 ## Contexto
 
@@ -59,17 +59,19 @@ Adulto en Unity (admin o counselor, password)
 - Documentación de A/B y hojas de rol deben actualizarse cuando se implemente.
 - No es SSO ni registro público; fuera de alcance borrar físico el historial.
 
-## Fases siguientes
+## Fases
 
-| Fase | Qué |
-|------|-----|
-| 1 | Migración + modelos `student_profiles` |
-| 2 | API admin CRUD + regenerate-code |
-| 3 | Lista enriquecida + `POST /students/{id}/assume` |
-| 4 | Unity: login adulto → lista → sesión |
-| 5 | README, curls, checklist integrado |
+| Fase | Qué | Estado |
+|------|-----|--------|
+| 0 | Acuerdos | Hecho |
+| 1 | Migración + modelos `student_profiles` | Hecho |
+| 2 | API admin CRUD + regenerate-code | Hecho |
+| 3 | Lista enriquecida + `POST /students/{id}/assume` | Hecho |
+| 4 | Unity: login adulto → lista → assume → sesión | Hecho |
+| 5 | Demo integrado + docs A/B + script | Hecho |
 
 ## Referencias
 
-- `documentacion/aprendizaje/checklists/fase-perfiles/checklist-fase-0-acuerdos.md`
-- `backend/APRENDIZAJE.md` (sección perfiles)
+- `documentacion/aprendizaje/checklists/fase-perfiles/`
+- `herramientas/demo-perfiles-estudiante.ps1`
+- `backend/APRENDIZAJE.md` / `cliente-unity/APRENDIZAJE.md`
