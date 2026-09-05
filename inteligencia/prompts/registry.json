@@ -1,0 +1,96 @@
+{
+  "active": {
+    "system": "empathia-v1",
+    "general": "general-v1",
+    "sadness": "tristeza-v1",
+    "anxiety": "ansiedad-v1",
+    "fatigue": "cansancio-v1",
+    "frustration": "frustracion-v1",
+    "loneliness": "soledad-v1",
+    "fear": "miedo-v1",
+    "anger": "enojo-v1",
+    "guilt": "culpa-v1",
+    "shame": "verguenza-v1",
+    "exam_pressure": "presion-examenes-v1",
+    "bullying": "bullying-v1",
+    "family_conflict": "conflicto-familiar-v1",
+    "no_talk": "no-quiere-hablar-v1",
+    "risk_medium": "riesgo-medio-v1",
+    "risk_high": "riesgo-alto-v1",
+    "emergency": "emergencia-v1"
+  },
+  "prompts": {
+    "empathia-v1": {
+      "path": "system/empathia-v1.txt",
+      "purpose": "Reglas base de acompanamiento seguro"
+    },
+    "general-v1": {
+      "path": "templates/general-v1.txt",
+      "purpose": "Respuesta general para un turno de texto"
+    },
+    "tristeza-v1": {
+      "path": "templates/tristeza-v1.txt",
+      "purpose": "Acompanamiento ante tristeza"
+    },
+    "ansiedad-v1": {
+      "path": "templates/ansiedad-v1.txt",
+      "purpose": "Acompanamiento ante ansiedad o preocupacion"
+    },
+    "cansancio-v1": {
+      "path": "templates/cansancio-v1.txt",
+      "purpose": "Acompanamiento ante cansancio o agotamiento"
+    },
+    "frustracion-v1": {
+      "path": "templates/frustracion-v1.txt",
+      "purpose": "Acompanamiento ante frustracion academica"
+    },
+    "soledad-v1": {
+      "path": "templates/soledad-v1.txt",
+      "purpose": "Acompanamiento ante soledad"
+    },
+    "riesgo-alto-v1": {
+      "path": "templates/riesgo-alto-v1.txt",
+      "purpose": "Respuesta prioritaria ante riesgo inmediato"
+    },
+    "miedo-v1": {
+      "path": "templates/miedo-v1.txt",
+      "purpose": "Acompanamiento ante miedo"
+    },
+    "enojo-v1": {
+      "path": "templates/enojo-v1.txt",
+      "purpose": "Acompanamiento ante enojo"
+    },
+    "culpa-v1": {
+      "path": "templates/culpa-v1.txt",
+      "purpose": "Acompanamiento ante culpa"
+    },
+    "verguenza-v1": {
+      "path": "templates/verguenza-v1.txt",
+      "purpose": "Acompanamiento ante verguenza"
+    },
+    "presion-examenes-v1": {
+      "path": "templates/presion-examenes-v1.txt",
+      "purpose": "Acompanamiento ante presion academica"
+    },
+    "bullying-v1": {
+      "path": "templates/bullying-v1.txt",
+      "purpose": "Respuesta ante acoso o intimidacion"
+    },
+    "conflicto-familiar-v1": {
+      "path": "templates/conflicto-familiar-v1.txt",
+      "purpose": "Acompanamiento ante conflicto familiar"
+    },
+    "no-quiere-hablar-v1": {
+      "path": "templates/no-quiere-hablar-v1.txt",
+      "purpose": "Respuesta sin presion ante silencio o reserva"
+    },
+    "riesgo-medio-v1": {
+      "path": "templates/riesgo-medio-v1.txt",
+      "purpose": "Respuesta ante posible riesgo medio"
+    },
+    "emergencia-v1": {
+      "path": "templates/emergencia-v1.txt",
+      "purpose": "Respuesta ante emergencia o peligro inmediato"
+    }
+  }
+}

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import time
 import uuid
@@ -26,6 +27,8 @@ VERTEX_AI_MODEL = os.environ.get("VERTEX_AI_MODEL", "gemini-2.5-flash")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_ROOT = Path(os.environ.get("EMPATHIA_DATA_ROOT", str(REPO_ROOT / "datos")))
+PROMPTS_ROOT = Path(__file__).resolve().parent / "prompts"
+PROMPTS_REGISTRY = PROMPTS_ROOT / "registry.json"
 FIXTURE_EXPRESSION = REPO_ROOT / "expresion" / "fixtures" / "paquete-expresion-ejemplo.json"
 SILENT_WAV = Path(__file__).resolve().parent / "fixtures" / "silent.wav"
 STUB_TRANSCRIPT_TEXT = "Hola, hoy me siento un poco cansado pero quiero hablar."
@@ -72,10 +75,93 @@ def vertex_health() -> dict:
     }
 
 
-def generate_vertex_reply(student_text: str) -> tuple[str, str, int]:
+def sanitize_preferred_name(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+
+    name = " ".join(value.strip().split())
+    if not name or len(name) > 40 or len(name.split()) > 2:
+        return ""
+    if not re.fullmatch(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ'\- ]+", name):
+        return ""
+    return name
+
+
+def load_prompt(prompt_id: str, student_text: str, preferred_name: str = "") -> tuple[str, str]:
+    registry = json.loads(PROMPTS_REGISTRY.read_text(encoding="utf-8"))
+    prompt_definition = registry["prompts"][prompt_id]
+    prompt_path = PROMPTS_ROOT / prompt_definition["path"]
+    prompt = prompt_path.read_text(encoding="utf-8")
+    prompt = prompt.replace("{{student_text}}", student_text)
+    if preferred_name:
+        prompt += (
+            "\n\nNombre preferido del estudiante: "
+            f"{preferred_name}\n"
+            "Usa este nombre solo cuando sea natural. No lo repitas en cada respuesta "
+            "y no inventes apodos.\n"
+        )
+    return prompt, prompt_id
+
+
+def active_prompt_name(prompt_key: str) -> str:
+    registry = json.loads(PROMPTS_REGISTRY.read_text(encoding="utf-8"))
+    return registry["active"].get(prompt_key, registry["active"]["general"])
+
+
+def select_prompt_key(emotion_label: str = "", risk_level: str = "low") -> str:
+    normalized_risk = risk_level.strip().lower()
+    if normalized_risk in {"emergency", "emergencia", "urgent", "urgente"}:
+        return "emergency"
+    if normalized_risk in {"high", "critical", "immediate", "alto", "critico"}:
+        return "risk_high"
+    if normalized_risk in {"medium", "moderate", "medio", "moderado"}:
+        return "risk_medium"
+
+    emotion_to_prompt = {
+        "sadness": "sadness",
+        "tristeza": "sadness",
+        "anxiety": "anxiety",
+        "ansiedad": "anxiety",
+        "fatigue": "fatigue",
+        "cansancio": "fatigue",
+        "frustration": "frustration",
+        "frustracion": "frustration",
+        "loneliness": "loneliness",
+        "soledad": "loneliness",
+        "fear": "fear",
+        "miedo": "fear",
+        "anger": "anger",
+        "enojo": "anger",
+        "ira": "anger",
+        "guilt": "guilt",
+        "culpa": "guilt",
+        "shame": "shame",
+        "vergüenza": "shame",
+        "verguenza": "shame",
+        "exam_pressure": "exam_pressure",
+        "presion_examenes": "exam_pressure",
+        "presion academica": "exam_pressure",
+        "bullying": "bullying",
+        "acoso": "bullying",
+        "family_conflict": "family_conflict",
+        "conflicto familiar": "family_conflict",
+        "no_talk": "no_talk",
+        "silencio": "no_talk",
+        "no quiere hablar": "no_talk",
+    }
+    return emotion_to_prompt.get(emotion_label.strip().lower(), "general")
+
+
+def generate_vertex_reply(
+    student_text: str,
+    emotion_label: str = "",
+    risk_level: str = "low",
+    preferred_name: str = "",
+) -> tuple[str, str, str, int]:
     if not VERTEX_AI_ENABLED:
         raise RuntimeError("VERTEX_AI_DISABLED")
 
+    preferred_name = sanitize_preferred_name(preferred_name)
     started = time.perf_counter()
     from google import genai
 
@@ -91,13 +177,9 @@ def generate_vertex_reply(student_text: str) -> tuple[str, str, int]:
             location=VERTEX_AI_LOCATION,
         )
         llm_version = f"vertex:{VERTEX_AI_MODEL}"
-    prompt = (
-        "Eres EmpathIA, un asistente de acompanamiento estudiantil. "
-        "Responde en espanol, con empatia, en un maximo de tres frases. "
-        "No diagnostiques ni hagas promesas. Si existe riesgo inmediato, "
-        "recomienda contactar a un adulto responsable o a emergencias locales.\n\n"
-        f"Mensaje del estudiante: {student_text}"
-    )
+    prompt_key = select_prompt_key(emotion_label, risk_level)
+    prompt_name = active_prompt_name(prompt_key)
+    prompt, prompt_name = load_prompt(prompt_name, student_text, preferred_name)
     response = client.models.generate_content(
         model=VERTEX_AI_MODEL,
         contents=prompt,
@@ -107,7 +189,7 @@ def generate_vertex_reply(student_text: str) -> tuple[str, str, int]:
         raise RuntimeError("VERTEX_EMPTY_RESPONSE")
 
     elapsed_ms = max(1, int((time.perf_counter() - started) * 1000))
-    return reply_text, llm_version, elapsed_ms
+    return reply_text, llm_version, prompt_name, elapsed_ms
 
 
 def _get_whisper_model():
@@ -237,6 +319,11 @@ class Handler(BaseHTTPRequestHandler):
             audio_path = (body.get("audio") or {}).get("path") if isinstance(body.get("audio"), dict) else None
             student_text = body.get("text") if isinstance(body.get("text"), str) else ""
             student_text = student_text.strip()
+            emotion_input = body.get("emotion") if isinstance(body.get("emotion"), dict) else {}
+            emotion_label = emotion_input.get("label") if isinstance(emotion_input.get("label"), str) else ""
+            risk_level = body.get("risk_level") if isinstance(body.get("risk_level"), str) else "low"
+            preferred_name = sanitize_preferred_name(body.get("preferred_name"))
+            prompt_version = active_prompt_name(select_prompt_key(emotion_label, risk_level))
 
             if student_text:
                 print(f"[C] TEXTO de B session={body.get('session_id')} | {student_text}", flush=True)
@@ -246,12 +333,18 @@ class Handler(BaseHTTPRequestHandler):
                     5,
                 )
                 if VERTEX_AI_ENABLED:
-                    reply_text, llm_version, llm_ms = generate_vertex_reply(student_text)
+                    reply_text, llm_version, prompt_version, llm_ms = generate_vertex_reply(
+                        student_text,
+                        emotion_label,
+                        risk_level,
+                        preferred_name,
+                    )
                     print(f"[C] GEMINI respuesta session={body.get('session_id')} | {reply_text}", flush=True)
                 else:
+                    greeting = f"{preferred_name}, gracias por contármelo. " if preferred_name else "Gracias por contármelo. "
                     reply_text = (
-                        f'Recibí tu mensaje: "{student_text}". '
-                        "Estoy aquí para acompañarte. ¿Quieres contarme un poco más?"
+                        f"{greeting}Suena a que estás llevando bastante encima. "
+                        "Podemos ir paso a paso; ¿qué es lo que más te está pesando ahora?"
                     )
                     llm_version = "stub-ollama"
                     llm_ms = 80
@@ -290,7 +383,7 @@ class Handler(BaseHTTPRequestHandler):
             payload = {
                 "request_id": request_id,
                 "transcript": transcript,
-                "emotion": {"label": "sadness", "confidence": 0.62},
+                "emotion": {"label": emotion_label or "sadness", "confidence": 0.62},
                 "risk_signals": [],
                 "reply": {
                     "text": reply_text,
@@ -307,6 +400,7 @@ class Handler(BaseHTTPRequestHandler):
                 "model_versions": {
                     "stt": stt_version,
                     "llm": llm_version,
+                    "prompt": prompt_version,
                     "tts": "stub-kokoro",
                 },
                 "metrics": {

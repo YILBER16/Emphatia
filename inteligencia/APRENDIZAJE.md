@@ -112,3 +112,61 @@ En Sprint 1 y Sprint 2 el foco no es IA real todavia: es explicar y demostrar el
 - B llama a C por API interna.
 - El header interno es `X-Internal-Token`.
 - Si aun no hay motor real, se documenta el stub y se mantiene el mismo contrato.
+
+## 7) Fase 2 — Biblioteca de prompts por escenario
+
+La biblioteca local vive en `inteligencia/prompts/` y se versiona junto con el
+servidor. `registry.json` identifica el prompt activo para cada escenario y
+cada plantilla contiene objetivo, tono, estrategia y limites de seguridad.
+
+Escenarios disponibles:
+
+- Emociones: tristeza, ansiedad, cansancio, frustracion, soledad, miedo,
+	enojo, culpa y verguenza.
+- Situaciones: presion por examenes, bullying, conflicto familiar y estudiante
+	que no quiere hablar.
+- Riesgo: bajo, medio, alto y emergencia.
+
+Para seleccionar una plantilla, B puede enviar estos campos opcionales:
+
+```json
+{
+	"emotion": {"label": "ansiedad"},
+	"risk_level": "low"
+}
+```
+
+La prioridad de seleccion es:
+
+1. `emergency` o `emergencia` usa `emergencia-v1`.
+2. `high`, `critical` o `immediate` usa `riesgo-alto-v1`.
+3. `medium` o `moderate` usa `riesgo-medio-v1`.
+4. Si no hay riesgo priorizado, se selecciona la emocion reconocida.
+5. Si no hay coincidencia, se usa `general-v1`.
+
+La respuesta registra el prompt utilizado en `model_versions.prompt`. Esto
+permite auditar y comparar respuestas sin cambiar el contrato de `InferTurn`.
+
+## 8) Fase 3 — Personalizacion segura
+
+B puede enviar opcionalmente un nombre preferido separado de los datos
+personales restantes:
+
+```json
+{
+	"preferred_name": "Sofia"
+}
+```
+
+C acepta nombres de hasta 40 caracteres, de una o dos palabras, y permite
+acentos, guiones y apostrofes. Valores con etiquetas, instrucciones, exceso de
+palabras o caracteres no validos se descartan antes de construir el prompt.
+
+Gemini recibe solo el nombre preferido validado y una instruccion para usarlo
+con naturalidad, sin repetirlo en cada respuesta ni inventar apodos. El nombre
+completo, correo, telefono y demas datos del pre-registro no se envian a
+Gemini.
+
+El campo `preferred_name` es opcional en
+`contratos/inteligencia/v1/infer-turn.request.schema.json`. Las reglas de
+sanitizacion se cubren en `inteligencia/test_fase3_personalizacion.py`.
