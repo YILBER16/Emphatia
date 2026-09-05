@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AdminStudentController;
 use App\Http\Controllers\Api\V1\EmpathiaController;
 use App\Http\Middleware\AuthenticateApiToken;
 use Illuminate\Support\Facades\Route;
@@ -26,4 +27,13 @@ Route::middleware(AuthenticateApiToken::class)->group(function () {
     Route::get('/risk-signals', [EmpathiaController::class, 'riskSignals']);
     Route::get('/risk-catalog', [EmpathiaController::class, 'riskCatalog']);
     Route::get('/students', [EmpathiaController::class, 'students']);
+    Route::post('/students/{id}/assume', [EmpathiaController::class, 'assumeStudent'])->whereNumber('id');
+
+    // Fase 2 — perfiles de estudiante (solo admin)
+    Route::get('/admin/students', [AdminStudentController::class, 'index']);
+    Route::post('/admin/students', [AdminStudentController::class, 'store']);
+    Route::get('/admin/students/{id}', [AdminStudentController::class, 'show'])->whereNumber('id');
+    Route::patch('/admin/students/{id}', [AdminStudentController::class, 'update'])->whereNumber('id');
+    Route::post('/admin/students/{id}/regenerate-code', [AdminStudentController::class, 'regenerateCode'])->whereNumber('id');
+    Route::post('/admin/students/{id}/deactivate', [AdminStudentController::class, 'deactivate'])->whereNumber('id');
 });

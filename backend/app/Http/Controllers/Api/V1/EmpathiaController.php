@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AccompanimentSession;
 use App\Models\ApiToken;
 use App\Models\RiskSignalRecord;
+use App\Models\StudentProfile;
 use App\Models\Turn;
 use App\Models\User;
 use App\Services\SessionEventBus;
@@ -71,7 +72,11 @@ class EmpathiaController extends Controller
         ]);
 
         $user = User::query()->where('username', $data['username'])->first();
-        if (! $user || ! Hash::check($data['password'], $user->password)) {
+        if (
+            ! $user
+            || $user->password === null
+            || ! Hash::check($data['password'], $user->password)
+        ) {
             return response()->json([
                 'error' => ['code' => 'INVALID_CREDENTIALS', 'message' => 'Invalid username or password'],
             ], 401);
@@ -511,9 +516,84 @@ class EmpathiaController extends Controller
             return response()->json(['error' => ['code' => 'FORBIDDEN', 'message' => 'Forbidden']], 403);
         }
 
-        $students = User::query()->where('role', 'student')->get(['id', 'username', 'display_name', 'role']);
+        // Lista operativa para Unity: solo perfiles activos (Fase 3).
+        $rows = StudentProfile::query()
+            ->with('user')
+            ->where('is_active', true)
+            ->whereHas('user', fn ($q) => $q->where('role', 'student'))
+            ->orderBy('nombre_preferencia')
+            ->limit(200)
+            ->get()
+            ->map(fn (StudentProfile $profile) => [
+                'id' => (string) $profile->user_id,
+                'profile_id' => $profile->id,
+                'display_name' => $profile->resolvedDisplayName(),
+                'nombre_preferencia' => $profile->nombre_preferencia,
+                'nombres' => $profile->nombres,
+                'apellidos' => $profile->apellidos,
+                'grado' => $profile->grado,
+                'edad' => $profile->edad,
+                'sede' => $profile->sede,
+                'jornada' => $profile->jornada,
+                'role' => 'student',
+            ]);
 
-        return response()->json(['data' => $students]);
+        return response()->json(['data' => $rows]);
+    }
+
+    /**
+     * Adulto (admin/counselor) asume la identidad de un estudiante activo
+     * y recibe un Bearer token de ese estudiante para Unity.
+     */
+    public function assumeStudent(Request $request, int $id, SessionEventBus $events)
+    {
+        $actor = $request->user();
+        if (! in_array($actor->role, ['counselor', 'admin'], true)) {
+            return response()->json(['error' => ['code' => 'FORBIDDEN', 'message' => 'Forbidden']], 403);
+        }
+
+        $student = User::query()->where('id', $id)->where('role', 'student')->first();
+        if (! $student) {
+            return response()->json(['error' => ['code' => 'NOT_FOUND', 'message' => 'Student not found']], 404);
+        }
+
+        $profile = StudentProfile::query()->where('user_id', $student->id)->first();
+        if (! $profile || ! $profile->is_active) {
+            return response()->json([
+                'error' => ['code' => 'STUDENT_INACTIVE', 'message' => 'Student profile missing or inactive'],
+            ], 422);
+        }
+
+        $closed = $this->abortActiveSessionsForStudent($events, (int) $student->id, 'assume_student');
+        $this->console('[B] Assume student='.$student->id.' by '.$actor->username.' — sesiones cerradas: '.$closed);
+
+        $plain = Str::random(48);
+        ApiToken::query()->create([
+            'id' => (string) Str::uuid(),
+            'user_id' => $student->id,
+            'token' => hash('sha256', $plain),
+            'expires_at' => now()->addDays(7),
+        ]);
+
+        return response()->json([
+            'token' => $plain,
+            'token_type' => 'Bearer',
+            'expires_at' => now()->addDays(7)->utc()->toIso8601String(),
+            'user' => $this->userPayload($student),
+            'profile' => [
+                'profile_id' => $profile->id,
+                'nombre_preferencia' => $profile->nombre_preferencia,
+                'grado' => $profile->grado,
+                'sede' => $profile->sede,
+                'jornada' => $profile->jornada,
+            ],
+            'assumed_by' => [
+                'id' => (string) $actor->id,
+                'username' => $actor->username,
+                'role' => $actor->role,
+            ],
+            'closed_active_sessions' => $closed,
+        ]);
     }
 
     private function console(string $message): void
@@ -545,6 +625,24 @@ class EmpathiaController extends Controller
     private function abortActiveSessions(SessionEventBus $events, string $reason): int
     {
         $rows = AccompanimentSession::query()->where('status', 'active')->get();
+        foreach ($rows as $session) {
+            $session->status = 'closed';
+            $session->ended_at = now();
+            $session->save();
+            $events->push($session, 'session.closed', ['reason' => $reason]);
+            $events->push($session, 'session.state', ['state' => 'closed']);
+        }
+
+        return $rows->count();
+    }
+
+    private function abortActiveSessionsForStudent(SessionEventBus $events, int $studentUserId, string $reason): int
+    {
+        $rows = AccompanimentSession::query()
+            ->where('status', 'active')
+            ->where('student_user_id', $studentUserId)
+            ->get();
+
         foreach ($rows as $session) {
             $session->status = 'closed';
             $session->ended_at = now();

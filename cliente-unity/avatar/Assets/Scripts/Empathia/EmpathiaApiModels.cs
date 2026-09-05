@@ -34,6 +34,57 @@ namespace Empathia
     }
 
     [Serializable]
+    public class StudentsListResponse
+    {
+        public StudentListItem[] data;
+    }
+
+    [Serializable]
+    public class StudentListItem
+    {
+        public string id;
+        public int profile_id;
+        public string display_name;
+        public string nombre_preferencia;
+        public string nombres;
+        public string apellidos;
+        public string grado;
+        public int edad;
+        public string sede;
+        public string jornada;
+        public string role;
+    }
+
+    [Serializable]
+    public class AssumeStudentResponse
+    {
+        public string token;
+        public string token_type;
+        public string expires_at;
+        public LoginUser user;
+        public AssumeProfile profile;
+        public AssumeActor assumed_by;
+    }
+
+    [Serializable]
+    public class AssumeProfile
+    {
+        public int profile_id;
+        public string nombre_preferencia;
+        public string grado;
+        public string sede;
+        public string jornada;
+    }
+
+    [Serializable]
+    public class AssumeActor
+    {
+        public string id;
+        public string username;
+        public string role;
+    }
+
+    [Serializable]
     public class SessionTextRequest
     {
         public string text;

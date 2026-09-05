@@ -11,3 +11,4 @@ Implementation ADRs:
 
 - ADR-007: SQLite in Phase 0
 - ADR-008: Event poll interim until real WebSocket (F1.4)
+- ADR-009: Student profiles without student password (admin CRUD; adult list in A)
