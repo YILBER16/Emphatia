@@ -76,3 +76,10 @@ Que el stub de inteligencia arranque en tu PC y que puedas explicar, en español
 ## Evidencia de cierre
 
 Simulador up + APRENDIZAJE con InferTurn explicado.
+$env:VERTEX_AI_ENABLED = "true"
+$env:VERTEX_AI_PROJECT = project-0c907c22-c264-4bec-813
+$env:VERTEX_AI_LOCATION = "us-central1"
+$env:GOOGLE_APPLICATION_CREDENTIALS = "C:\ruta-segura\service-account.json"
+python servidor_simulado.py$env:VERTEX_AI_ENABLED = "true"
+$env:GOOGLE_API_KEY = "AIzaSyA6UCT8dVn1sR3sukoZwpNL0tBgQIZmeXw"
+python servidor_simulado.py
