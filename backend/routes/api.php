@@ -13,10 +13,13 @@ Route::middleware(AuthenticateApiToken::class)->group(function () {
     Route::get('/auth/me', [EmpathiaController::class, 'me']);
 
     Route::post('/accompaniment/sessions', [EmpathiaController::class, 'createSession']);
+    Route::get('/accompaniment/sessions/active', [EmpathiaController::class, 'getActiveSession']);
+    Route::post('/accompaniment/sessions/active/close', [EmpathiaController::class, 'closeActiveSession']);
+    Route::post('/accompaniment/sessions/active/text', [EmpathiaController::class, 'postSessionText']);
     Route::get('/accompaniment/sessions/{sessionId}', [EmpathiaController::class, 'getSession']);
     Route::post('/accompaniment/sessions/{sessionId}/close', [EmpathiaController::class, 'closeSession']);
     Route::post('/accompaniment/sessions/{sessionId}/turns', [EmpathiaController::class, 'createTurn']);
-    Route::post('/accompaniment/sessions/{sessionId}/text', [EmpathiaController::class, 'createTextTurn']);
+    Route::post('/accompaniment/sessions/{sessionId}/text', [EmpathiaController::class, 'postSessionText']);
     Route::get('/accompaniment/sessions/{sessionId}/events', [EmpathiaController::class, 'events']);
     Route::get('/accompaniment/turns/{turnId}/audio/tts', [EmpathiaController::class, 'ttsAudio']);
 
