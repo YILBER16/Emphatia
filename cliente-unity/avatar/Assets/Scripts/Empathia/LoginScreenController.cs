@@ -59,7 +59,10 @@ namespace Empathia
         GameObject _loginView;
         GameObject _confirmView;
         GameObject _healthView;
+        GameObject _pickStudentView;
         GameObject _cardShadowGo;
+        Transform _studentListContent;
+        TextMeshProUGUI _pickStatus;
 
         TMP_InputField _baseUrl;
         TMP_InputField _user;
@@ -89,7 +92,7 @@ namespace Empathia
         AudioClip _micClip;
         bool _built;
         Vector2 _lastScreen;
-        enum UiScreen { Login, Confirm, Health }
+        enum UiScreen { Login, Confirm, Health, PickStudent }
         UiScreen _screen = UiScreen.Login;
 
         void Awake()
@@ -371,6 +374,7 @@ namespace Empathia
             }
 
             BuildLoginView(canvasGo.transform);
+            BuildPickStudentView(canvasGo.transform);
             BuildConfirmView(canvasGo.transform);
             BuildHealthView(canvasGo.transform);
             ShowScreen(UiScreen.Login);
@@ -413,17 +417,17 @@ namespace Empathia
             v.padding = new RectOffset(0, 0, 4, 0);
 
             _baseUrl = AddCompactInput(content.transform, "Servidor", EmpathiaAuthState.BaseUrl);
-            _user = AddIconInput(content.transform, "Usuario o correo electrónico", "estudiante1", "user", false);
+            _user = AddIconInput(content.transform, "Adulto (admin1 / orientador1)", "orientador1", "user", false);
             _pass = AddIconInput(content.transform, "Contraseña", "password", "lock", true);
 
             _checkBBtn = AddOutlineButton(content.transform, "Probar conexión B", 52, OnCheckConnectionB);
             _loginBtn = AddGradientButton(content.transform, "Iniciar sesión", 64, OnLogin);
             _registerBtn = AddOutlineButton(content.transform, "Registrarse", 58, () =>
             {
-                SetLoginStatus("Registro: próximamente (usa estudiante1 / password).");
+                SetLoginStatus("Los perfiles los crea el admin en B (API). Demo legado: estudiante1.");
             });
 
-            AddLabel(content.transform, "Tu bienestar emocional importa.", 14, FontStyles.Normal, Muted, 20, TextAlignmentOptions.Center);
+            AddLabel(content.transform, "Adulto entra → elige estudiante → sesión.", 14, FontStyles.Normal, Muted, 20, TextAlignmentOptions.Center);
             _loginStatus = AddLabel(content.transform, "", 12, FontStyles.Normal, new Color(0.75f, 0.25f, 0.35f), 36, TextAlignmentOptions.Center);
         }
 
@@ -431,7 +435,7 @@ namespace Empathia
         {
             if (_busy) return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://192.168.1.69:8000/api/v1"
+                ? "http://192.168.1.31:8000/api/v1"
                 : _baseUrl.text.Trim();
             StartCoroutine(CheckConnectionToB(silent: false));
         }
@@ -456,6 +460,84 @@ namespace Empathia
                 Debug.Log("[Empathia] " + msg);
             else
                 Debug.LogWarning("[Empathia] " + msg);
+        }
+
+        void BuildPickStudentView(Transform canvas)
+        {
+            _pickStudentView = new GameObject("PickStudentView", typeof(RectTransform));
+            _pickStudentView.transform.SetParent(canvas, false);
+            StretchFull(_pickStudentView.GetComponent<RectTransform>());
+
+            var dim = CreateImage(_pickStudentView.transform, "Dim", new Color(0.1f, 0.08f, 0.18f, 0.35f));
+            StretchFull(dim.rectTransform);
+            dim.raycastTarget = true;
+
+            var card = CreateImage(_pickStudentView.transform, "PickCard", CardGlass);
+            ApplyRounded(card, RoundSprite(256, 48), 1.05f);
+            var cardRt = card.rectTransform;
+            cardRt.anchorMin = cardRt.anchorMax = cardRt.pivot = new Vector2(0.5f, 0.5f);
+            cardRt.sizeDelta = new Vector2(560, 520);
+
+            var content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup));
+            content.transform.SetParent(cardRt, false);
+            var contentRt = content.GetComponent<RectTransform>();
+            StretchFull(contentRt);
+            contentRt.offsetMin = new Vector2(28, 24);
+            contentRt.offsetMax = new Vector2(-28, -24);
+            var v = content.GetComponent<VerticalLayoutGroup>();
+            v.spacing = 10;
+            v.childAlignment = TextAnchor.UpperCenter;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+
+            AddLabel(content.transform, "Elegir estudiante", 26, FontStyles.Bold, Navy, 36, TextAlignmentOptions.Center);
+            AddLabel(content.transform, "Perfiles activos creados por el admin en B.", 14, FontStyles.Normal, Muted, 24, TextAlignmentOptions.Center);
+
+            var scrollGo = new GameObject("Scroll", typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(LayoutElement));
+            scrollGo.transform.SetParent(content.transform, false);
+            scrollGo.GetComponent<Image>().color = FieldBg;
+            ApplyRounded(scrollGo.GetComponent<Image>(), RoundSprite(128, 24), 1f);
+            scrollGo.GetComponent<LayoutElement>().preferredHeight = 280;
+            scrollGo.GetComponent<LayoutElement>().flexibleHeight = 1f;
+
+            var viewport = new GameObject("Viewport", typeof(RectTransform), typeof(RectMask2D));
+            viewport.transform.SetParent(scrollGo.transform, false);
+            StretchFull(viewport.GetComponent<RectTransform>());
+            viewport.GetComponent<RectTransform>().offsetMin = new Vector2(8, 8);
+            viewport.GetComponent<RectTransform>().offsetMax = new Vector2(-8, -8);
+
+            var list = new GameObject("List", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            list.transform.SetParent(viewport.transform, false);
+            var listRt = list.GetComponent<RectTransform>();
+            listRt.anchorMin = new Vector2(0, 1);
+            listRt.anchorMax = new Vector2(1, 1);
+            listRt.pivot = new Vector2(0.5f, 1f);
+            listRt.anchoredPosition = Vector2.zero;
+            listRt.sizeDelta = new Vector2(0, 0);
+            var listV = list.GetComponent<VerticalLayoutGroup>();
+            listV.spacing = 8;
+            listV.childControlWidth = true;
+            listV.childControlHeight = true;
+            listV.childForceExpandWidth = true;
+            listV.childForceExpandHeight = false;
+            list.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var scroll = scrollGo.GetComponent<ScrollRect>();
+            scroll.viewport = viewport.GetComponent<RectTransform>();
+            scroll.content = listRt;
+            scroll.horizontal = false;
+            scroll.vertical = true;
+            _studentListContent = list.transform;
+
+            _pickStatus = AddLabel(content.transform, "", 13, FontStyles.Normal, Muted, 28, TextAlignmentOptions.Center);
+            AddOutlineButton(content.transform, "Actualizar lista", 48, () => StartCoroutine(LoadStudentList()));
+            AddOutlineButton(content.transform, "Volver", 48, () =>
+            {
+                EmpathiaAuthState.ClearAll();
+                ShowScreen(UiScreen.Login);
+            });
         }
 
         void BuildConfirmView(Transform canvas)
@@ -590,19 +672,100 @@ namespace Empathia
         {
             _screen = screen;
             if (_loginView != null) _loginView.SetActive(screen == UiScreen.Login);
+            if (_pickStudentView != null) _pickStudentView.SetActive(screen == UiScreen.PickStudent);
             if (_confirmView != null) _confirmView.SetActive(screen == UiScreen.Confirm);
             if (_healthView != null) _healthView.SetActive(screen == UiScreen.Health);
         }
 
+        IEnumerator LoadStudentList()
+        {
+            SetBusy(true);
+            if (_pickStatus != null)
+                _pickStatus.text = EmpathiaText.ForUi("Cargando estudiantes…");
+
+            if (_studentListContent != null)
+            {
+                for (var i = _studentListContent.childCount - 1; i >= 0; i--)
+                    Destroy(_studentListContent.GetChild(i).gameObject);
+            }
+
+            var ok = false;
+            var msg = "";
+            StudentListItem[] items = null;
+            yield return _api.ListStudents((success, message, data) =>
+            {
+                ok = success;
+                msg = message;
+                items = data;
+            });
+
+            SetBusy(false);
+            if (!ok)
+            {
+                if (_pickStatus != null)
+                    _pickStatus.text = EmpathiaText.ForUi("Error: " + msg);
+                yield break;
+            }
+
+            if (items == null || items.Length == 0)
+            {
+                if (_pickStatus != null)
+                    _pickStatus.text = EmpathiaText.ForUi("No hay estudiantes activos. El admin debe crear perfiles en B.");
+                yield break;
+            }
+
+            if (_pickStatus != null)
+                _pickStatus.text = EmpathiaText.ForUi(msg);
+
+            foreach (var item in items)
+            {
+                if (item == null || string.IsNullOrEmpty(item.id))
+                    continue;
+                var label = string.IsNullOrEmpty(item.display_name) ? item.nombre_preferencia : item.display_name;
+                var sub = (item.grado ?? "") + " · " + (item.sede ?? "") + " · " + (item.jornada ?? "");
+                var capturedId = item.id;
+                var capturedName = label;
+                var btn = AddOutlineButton(_studentListContent, label + "\n" + sub, 64, () => OnPickStudent(capturedId, capturedName));
+                btn.GetComponent<LayoutElement>().preferredHeight = 64;
+            }
+        }
+
+        void OnPickStudent(string studentUserId, string displayName)
+        {
+            if (_busy) return;
+            SetBusy(true);
+            if (_pickStatus != null)
+                _pickStatus.text = EmpathiaText.ForUi("Abriendo sesión de " + displayName + "…");
+
+            StartCoroutine(_api.AssumeStudent(studentUserId, (ok, msg) =>
+            {
+                SetBusy(false);
+                if (!ok)
+                {
+                    if (_pickStatus != null)
+                        _pickStatus.text = EmpathiaText.ForUi("Error: " + msg);
+                    Debug.LogWarning("[Empathia] Assume: " + msg);
+                    return;
+                }
+
+                Debug.Log("[Empathia] " + msg);
+                ShowScreen(UiScreen.Confirm);
+            }));
+        }
+
         void OnConfirmEnterHealth()
         {
-            var name = string.IsNullOrWhiteSpace(EmpathiaAuthState.Username)
-                ? (_user != null ? _user.text.Trim() : "usuario")
-                : EmpathiaAuthState.Username;
+            var name = !string.IsNullOrWhiteSpace(EmpathiaAuthState.StudentDisplayName)
+                ? EmpathiaAuthState.StudentDisplayName
+                : (string.IsNullOrWhiteSpace(EmpathiaAuthState.Username)
+                    ? (_user != null ? _user.text.Trim() : "usuario")
+                    : EmpathiaAuthState.Username);
             if (_welcomeTitle != null)
                 _welcomeTitle.text = "¡Bienvenido, " + name + "!";
             if (_welcomeSub != null)
-                _welcomeSub.text = "Login + sesión + audio/texto a B.";
+                _welcomeSub.text = !string.IsNullOrEmpty(EmpathiaAuthState.AdultToken)
+                    ? "Adulto eligió estudiante → sesión B."
+                    : "Login + sesión + audio/texto a B.";
             SetTranscript("(aún no hay)");
             SetReply("(sin respuesta)");
             SetStatus("Listo. Graba o escribe un mensaje para B.");
@@ -992,7 +1155,7 @@ namespace Empathia
         {
             if (_busy) return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://192.168.1.69:8000/api/v1"
+                ? "http://192.168.1.31:8000/api/v1"
                 : _baseUrl.text.Trim();
 
             SetBusy(true);
@@ -1002,9 +1165,19 @@ namespace Empathia
                 SetBusy(false);
                 if (ok)
                 {
-                    SetLoginStatus("Login OK. Confirma para continuar.");
-                    ShowScreen(UiScreen.Confirm);
                     Debug.Log("[Empathia] " + msg);
+                    if (EmpathiaAuthState.IsAdultStaff)
+                    {
+                        SetLoginStatus("Login adulto OK. Elige un estudiante.");
+                        ShowScreen(UiScreen.PickStudent);
+                        StartCoroutine(LoadStudentList());
+                    }
+                    else
+                    {
+                        // Demo legado: estudiante1 con password
+                        SetLoginStatus("Login OK (demo estudiante). Confirma para continuar.");
+                        ShowScreen(UiScreen.Confirm);
+                    }
                 }
                 else
                 {

@@ -30,10 +30,20 @@ cliente-unity/avatar/Assets/Scripts/Empathia/
 
 Escena: `avatar/Assets/Scenes/Login.unity`
 
+**Flujo principal (Fase 4 — sin password del niño):**
+
 1. Abrir escena **Login** → **Play**
-2. Completar **Servidor**, **Usuario**, **Contraseña**
-3. Pulsar **Iniciar sesión**
-4. Éxito = mensaje *Login OK* + token parcial (nunca llamar a `:8100`)
+2. Servidor: `http://192.168.1.31:8000/api/v1` (o la IP de B)
+3. Login adulto: `orientador1` / `password` (o `admin1`)
+4. Pantalla **Elegir estudiante** → tocar un perfil activo
+5. Confirm → Salud → texto/audio a B
+
+**Demo legado:** `estudiante1` / `password` salta la lista (solo lab).
+
+Los perfiles los crea el admin en B (`POST /api/v1/admin/students`).
+
+Demo API (B): `.\herramientas\demo-perfiles-estudiante.ps1`  
+Checklist: `documentacion/aprendizaje/checklists/fase-perfiles/checklist-fase-5-demo.md`
 
 ## Sprint 2 — Flujo del turno
 

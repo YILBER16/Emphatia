@@ -8,12 +8,14 @@
 
 ## Eres responsable de
 
-Escuchar al estudiante, enviar el audio, mostrar estados, reproducir la respuesta y animar labios/cara según el paquete de expresión.
+Login **adulto** (admin/orientador), elegir estudiante de la lista, enviar audio/texto, mostrar estados, reproducir la respuesta y animar labios/cara según el paquete de expresión.
 
 ## No haces
 
 - Llamar a Inteligencia (`:8100`), Ollama o Whisper  
 - Inventar respuestas si hay error  
+- Crear perfiles de estudiante (eso es **admin en B**)  
+- Pedir usuario/contraseña al niño (flujo principal)  
 - Cambiar contratos sin avisar al equipo  
 
 ## Día 1 (haz esto hoy)
@@ -25,7 +27,12 @@ Escuchar al estudiante, enviar el audio, mostrar estados, reproducir la respuest
 
 ## Primera tarea
 
-Login → sesión → grabar WAV → enviar turno → ver eventos → mostrar el texto de respuesta.
+Login adulto → lista estudiantes → assume → sesión → texto/audio → events → respuesta.
+
+## Usuarios de prueba (adulto)
+
+`orientador1` / `admin1` — contraseña: `password`  
+Demo legado: `estudiante1` / `password` (salta la lista).
 
 ## Te bloqueas si…
 
@@ -39,4 +46,5 @@ Estados escuchando / pensando / hablando + audio + boca básica + error visible.
 
 ---
 
-Guía larga: `documentacion/equipo/guia-rol-A-avatar.md`
+Guía larga: `documentacion/equipo/guia-rol-A-avatar.md`  
+Perfiles: ADR-009 + `cliente-unity/APRENDIZAJE.md`

@@ -11,6 +11,44 @@ php artisan serve --host=127.0.0.1 --port=8000
 
 Usuarios de prueba: `estudiante1` / `orientador1` / `admin1` — contraseña `password`.
 
+### Admin — perfiles de estudiante (Fase 2)
+
+Solo `admin1`. El estudiante **no** usa password. El `access_code` aparece **solo** al crear o regenerar.
+
+```powershell
+# Login admin
+$login = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/login" -Method POST -ContentType "application/json" -Body '{"username":"admin1","password":"password"}'
+$h = @{ Authorization = "Bearer $($login.token)"; "Content-Type" = "application/json" }
+
+# Crear perfil (guarda access_code de la respuesta)
+$body = '{"nombres":"Ana","apellidos":"Perez","nombre_preferencia":"Anita","grado":"9-1","edad":15,"sede":"Norte","jornada":"tarde","documento_numero":"1098765432","acudiente_telefono":"3101112233","acudiente_documento":"52123456"}'
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/admin/students" -Method POST -Headers $h -Body $body
+
+# Listar / regenerar / desactivar
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/admin/students" -Headers $h
+# POST .../admin/students/{id}/regenerate-code
+# POST .../admin/students/{id}/deactivate
+```
+
+ADR: `documentacion/decisiones/ADR-009-perfiles-estudiante-sin-password.md`.
+
+### Adulto en Unity — lista y assume (Fase 3)
+
+`admin` u `orientador` eligen estudiante (sin password del niño):
+
+```powershell
+$login = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/login" -Method POST -ContentType "application/json" -Body '{"username":"orientador1","password":"password"}'
+$h = @{ Authorization = "Bearer $($login.token)" }
+
+# Lista activa (display_name, grado, sede…)
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/students" -Headers $h
+
+# Assume → token del estudiante (usar ese token en el resto del flujo)
+$assumed = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/students/1/assume" -Method POST -Headers $h
+$studentHeaders = @{ Authorization = "Bearer $($assumed.token)"; "Content-Type" = "application/json" }
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/accompaniment/sessions" -Method POST -Headers $studentHeaders -Body '{}'
+```
+
 Manual: `../documentacion/manuales/arranque-parada.md`.
 
 **Nota:** en la documentación del equipo la carpeta se llama `servidor/`. En GitHub es `backend/` (misma app). Puedes crear el enlace:

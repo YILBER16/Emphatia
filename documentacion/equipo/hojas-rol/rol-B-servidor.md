@@ -9,7 +9,7 @@
 
 ## Eres responsable de
 
-Login, sesión, turnos, guardar historial/riesgo, pedir la respuesta a C, avisar a Unity.
+Login staff, **perfiles de estudiante** (solo admin), sesión, turnos, guardar historial/riesgo, pedir la respuesta a C, avisar a Unity.
 
 ## No haces
 
@@ -30,8 +30,16 @@ Documentar login, crear sesión, subir turno, ver eventos, cerrar sesión — en
 
 ## Usuarios de prueba
 
-`estudiante1` / `orientador1` / `admin1` — contraseña: `password`
+`estudiante1` / `orientador1` / `admin1` — contraseña: `password`  
+(`estudiante1` es demo legado; el flujo real es adulto → lista → assume.)
+
+## Perfiles (ADR-009)
+
+- Solo **admin** crea / regenera código / desactiva.  
+- **admin + counselor** listan y hacen `assume`.  
+- Demo API: `.\herramientas\demo-perfiles-estudiante.ps1`
 
 ---
 
-Guía larga: `documentacion/equipo/guia-rol-B-servidor.md`
+Guía larga: `documentacion/equipo/guia-rol-B-servidor.md`  
+Checklists: `documentacion/aprendizaje/checklists/fase-perfiles/`

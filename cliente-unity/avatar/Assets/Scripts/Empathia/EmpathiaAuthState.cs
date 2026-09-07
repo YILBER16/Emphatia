@@ -9,9 +9,15 @@ namespace Empathia
     {
         const string PrefSessionId = "Empathia.LastSessionId";
 
-        public static string BaseUrl { get; set; } = "http://192.168.1.69:8000/api/v1";
+        // IP B por defecto (lab). Editable en la UI de login.
+        public static string BaseUrl { get; set; } = "http://192.168.1.31:8000/api/v1";
         public static string Token { get; set; }
+        /// <summary>Token del adulto (admin/counselor) antes del assume.</summary>
+        public static string AdultToken { get; set; }
         public static string Username { get; set; }
+        public static string Role { get; set; }
+        public static string StudentUserId { get; set; }
+        public static string StudentDisplayName { get; set; }
 
         static string _sessionId;
         public static string SessionId
@@ -31,6 +37,8 @@ namespace Empathia
 
         public static bool HasToken => !string.IsNullOrEmpty(Token);
         public static bool HasSession => !string.IsNullOrEmpty(SessionId);
+        public static bool IsAdultStaff =>
+            Role == "admin" || Role == "counselor";
 
         public static string TokenPreview
         {
@@ -64,7 +72,11 @@ namespace Empathia
         public static void ClearAll()
         {
             Token = null;
+            AdultToken = null;
             Username = null;
+            Role = null;
+            StudentUserId = null;
+            StudentDisplayName = null;
             ClearSessionMemory();
         }
     }

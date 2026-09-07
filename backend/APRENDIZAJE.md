@@ -54,9 +54,25 @@ Cuando es `false`, B llama a `http://127.0.0.1:8100` (servidor de C).
 
 | Usuario | Contraseña | Rol |
 |---------|------------|-----|
-| estudiante1 | password | estudiante |
+| estudiante1 | password | estudiante (solo demos de desarrollo) |
 | orientador1 | password | orientador |
 | admin1 | password | admin |
+
+## Perfiles de estudiante (acuerdo Fase 0)
+
+**Objetivo:** el admin crea perfiles; el estudiante **no** usa usuario/contraseña. En Unity, un adulto hace login y elige al estudiante de una lista.
+
+Decisiones cerradas: [ADR-009](../documentacion/decisiones/ADR-009-perfiles-estudiante-sin-password.md) · checklist [Fase 0](../documentacion/aprendizaje/checklists/fase-perfiles/checklist-fase-0-acuerdos.md).
+
+| Quién | Puede |
+|-------|--------|
+| Solo **admin** | Crear, editar, regenerar `access_code`, desactivar |
+| **admin** y **counselor** | Listar y elegir estudiante (assume) para operar |
+| Estudiante | Sin password; historial vía `student_user_id` |
+
+Campos del perfil: nombres, apellidos, nombre de preferencia, grado, edad, sede, jornada, documento, teléfono y documento del acudiente, `access_code` regenerable, `is_active`.
+
+**Fases 0–5 hechas** (ADR-009): perfiles sin password del estudiante, API admin, assume, UI Unity, demo `herramientas/demo-perfiles-estudiante.ps1`.
 
 ## Cómo arrancar
 

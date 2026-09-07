@@ -72,8 +72,95 @@ namespace Empathia
 
                     EmpathiaAuthState.Token = parsed.token;
                     EmpathiaAuthState.Username = parsed.user != null ? parsed.user.username : username;
+                    EmpathiaAuthState.Role = parsed.user != null ? parsed.user.role : null;
+                    EmpathiaAuthState.AdultToken = null;
+                    EmpathiaAuthState.StudentUserId = null;
+                    EmpathiaAuthState.StudentDisplayName = null;
+                    if (EmpathiaAuthState.IsAdultStaff)
+                        EmpathiaAuthState.AdultToken = parsed.token;
                     EmpathiaAuthState.ClearSessionMemory();
-                    onDone(true, "Login OK. Token: " + EmpathiaAuthState.TokenPreview);
+                    onDone(true, "Login OK (" + (EmpathiaAuthState.Role ?? "?") + "). Token: " + EmpathiaAuthState.TokenPreview);
+                });
+        }
+
+        public IEnumerator ListStudents(Action<bool, string, StudentListItem[]> onDone)
+        {
+            var bearer = !string.IsNullOrEmpty(EmpathiaAuthState.AdultToken)
+                ? EmpathiaAuthState.AdultToken
+                : EmpathiaAuthState.Token;
+
+            if (string.IsNullOrEmpty(bearer))
+            {
+                onDone(false, "Primero haz login como adulto (admin/orientador).", null);
+                yield break;
+            }
+
+            yield return SendJson(
+                "GET",
+                EmpathiaAuthState.BaseUrl.TrimEnd('/') + "/students",
+                "{}",
+                bearer,
+                (ok, code, text) =>
+                {
+                    if (!ok)
+                    {
+                        onDone(false, MapError(code, text, "No se pudo listar estudiantes."), null);
+                        return;
+                    }
+
+                    var parsed = JsonUtility.FromJson<StudentsListResponse>(text);
+                    var items = parsed != null && parsed.data != null ? parsed.data : new StudentListItem[0];
+                    onDone(true, "Estudiantes activos: " + items.Length, items);
+                });
+        }
+
+        public IEnumerator AssumeStudent(string studentUserId, Action<bool, string> onDone)
+        {
+            var bearer = !string.IsNullOrEmpty(EmpathiaAuthState.AdultToken)
+                ? EmpathiaAuthState.AdultToken
+                : EmpathiaAuthState.Token;
+
+            if (string.IsNullOrEmpty(bearer))
+            {
+                onDone(false, "Primero haz login como adulto (admin/orientador).");
+                yield break;
+            }
+
+            if (string.IsNullOrEmpty(studentUserId))
+            {
+                onDone(false, "Falta id de estudiante.");
+                yield break;
+            }
+
+            yield return SendJson(
+                "POST",
+                EmpathiaAuthState.BaseUrl.TrimEnd('/') + "/students/" + studentUserId + "/assume",
+                "{}",
+                bearer,
+                (ok, code, text) =>
+                {
+                    if (!ok)
+                    {
+                        onDone(false, MapError(code, text, "No se pudo asumir el estudiante."));
+                        return;
+                    }
+
+                    var parsed = JsonUtility.FromJson<AssumeStudentResponse>(text);
+                    if (parsed == null || string.IsNullOrEmpty(parsed.token))
+                    {
+                        onDone(false, "Respuesta de assume sin token.");
+                        return;
+                    }
+
+                    EmpathiaAuthState.Token = parsed.token;
+                    EmpathiaAuthState.Role = parsed.user != null ? parsed.user.role : "student";
+                    EmpathiaAuthState.StudentUserId = parsed.user != null ? parsed.user.id : studentUserId;
+                    EmpathiaAuthState.StudentDisplayName = parsed.profile != null && !string.IsNullOrEmpty(parsed.profile.nombre_preferencia)
+                        ? parsed.profile.nombre_preferencia
+                        : (parsed.user != null ? parsed.user.display_name : studentUserId);
+                    EmpathiaAuthState.Username = EmpathiaAuthState.StudentDisplayName;
+                    EmpathiaAuthState.ClearSessionMemory();
+                    onDone(true, "Estudiante listo: " + EmpathiaAuthState.StudentDisplayName);
                 });
         }
 
