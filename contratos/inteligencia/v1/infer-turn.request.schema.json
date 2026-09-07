@@ -11,6 +11,11 @@
     "turn_id": { "type": "string", "format": "uuid" },
     "student_id": { "type": "string", "format": "uuid" },
     "locale": { "type": "string", "const": "es" },
+    "preferred_name": {
+      "type": "string",
+      "maxLength": 40,
+      "pattern": "^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ'\\- ]+$"
+    },
     "audio": {
       "type": "object",
       "additionalProperties": false,
