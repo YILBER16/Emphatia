@@ -435,7 +435,7 @@ namespace Empathia
         {
             if (_busy) return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://192.168.1.31:8000/api/v1"
+                ? "http://127.0.0.1:8000/api/v1"
                 : _baseUrl.text.Trim();
             StartCoroutine(CheckConnectionToB(silent: false));
         }
@@ -1155,7 +1155,7 @@ namespace Empathia
         {
             if (_busy) return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://192.168.1.31:8000/api/v1"
+                ? "http://127.0.0.1:8000/api/v1"
                 : _baseUrl.text.Trim();
 
             SetBusy(true);
@@ -1438,7 +1438,8 @@ namespace Empathia
                     : (immediateReply ?? "(sin reply_text)");
                 SetReply(reply);
                 Debug.Log("[Empathia] turn.result reply: " + reply);
-                SetStatus("Respuesta de B/C lista (turn.result).");
+                SetStatus("Respuesta de B/C lista. Reproduciendo TTS…");
+                yield return PlayTurnTts(turn);
             }
             else if (!string.IsNullOrWhiteSpace(immediateReply))
             {
@@ -1446,16 +1447,73 @@ namespace Empathia
                 SetReply(immediateReply);
                 Debug.LogWarning("[Empathia] Sin turn.result (" + pollMsg + "). Uso reply del POST.");
                 SetStatus("Texto OK. Respuesta del POST (sin evento). " + pollMsg);
+                SetBusy(false);
+                SetState("idle");
+                yield break;
             }
             else
             {
                 SetReply("(sin respuesta)");
                 SetStatus("Texto enviado, pero sin turn.result: " + pollMsg);
                 Debug.LogWarning("[Empathia] " + pollMsg);
+                SetBusy(false);
+                SetState("idle");
+                yield break;
             }
 
             SetBusy(false);
             SetState("idle");
+        }
+
+        /// <summary>
+        /// Tras turn.result: estado speaking + descarga/reproducción de TTS (Bearer).
+        /// </summary>
+        IEnumerator PlayTurnTts(TurnResultInfo turn)
+        {
+            if (turn == null)
+                yield break;
+
+            var ttsUrl = turn.TtsUrl;
+            if (string.IsNullOrWhiteSpace(ttsUrl) && !string.IsNullOrWhiteSpace(turn.TurnId))
+                ttsUrl = EmpathiaApiClient.BuildTtsUrl(turn.TurnId, null);
+
+            if (string.IsNullOrWhiteSpace(ttsUrl))
+            {
+                SetStatus("Sin URL de TTS en turn.result (texto OK).");
+                yield break;
+            }
+
+            if (_audio == null)
+                _audio = GetComponent<AudioSource>() ?? gameObject.AddComponent<AudioSource>();
+
+            SetState("speaking");
+            SetStatus("Descargando TTS…");
+
+            var playOk = false;
+            var playMsg = "";
+            yield return _api.DownloadAndPlayTts(ttsUrl, _audio, (ok, msg) =>
+            {
+                playOk = ok;
+                playMsg = msg;
+            });
+
+            if (!playOk)
+            {
+                SetStatus("Texto OK. TTS no sonó: " + playMsg);
+                Debug.LogWarning("[Empathia] TTS: " + playMsg);
+                yield break;
+            }
+
+            SetStatus("Speaking… " + playMsg);
+            // Esperar a que termine el clip (o un tope de seguridad).
+            var waited = 0f;
+            while (_audio != null && _audio.isPlaying && waited < 60f)
+            {
+                waited += Time.unscaledDeltaTime;
+                yield return null;
+            }
+
+            SetStatus("Turno completo: texto + TTS.");
         }
 
         void OnSendTypedText()

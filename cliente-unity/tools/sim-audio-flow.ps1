@@ -1,4 +1,4 @@
-$base = 'http://192.168.1.69:8000/api/v1'
+$base = 'http://127.0.0.1:8000/api/v1'
 $ErrorActionPreference = 'Stop'
 
 Write-Host '=== 1) HEALTH ==='

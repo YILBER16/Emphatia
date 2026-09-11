@@ -974,7 +974,7 @@ namespace Empathia
             {
                 return "No se pudo conectar al servidor B en "
                        + EmpathiaAuthState.BaseUrl
-                       + ". ¿Está encendido? (php artisan serve --host=127.0.0.1 --port=8000)";
+                       + ". Enciende B o corrige el campo Servidor. En este PC: http://127.0.0.1:8000/api/v1";
             }
 
             var code = ExtractErrorCode(bodyOrNetwork);
