@@ -1,0 +1,7 @@
+Clasifica la emoción predominante del mensaje del estudiante.
+
+Devuelve únicamente una etiqueta de esta lista: neutral, joy, sadness, anger, fear, anxiety.
+Usa neutral si no hay evidencia suficiente. No diagnostiques, no inventes contexto y no confundas una situación de riesgo con una emoción.
+
+Mensaje del estudiante:
+{{student_text}}

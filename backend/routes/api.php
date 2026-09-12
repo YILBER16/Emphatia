@@ -19,6 +19,7 @@ Route::middleware(AuthenticateApiToken::class)->group(function () {
     Route::post('/accompaniment/sessions/active/text', [EmpathiaController::class, 'postSessionText']);
     Route::get('/accompaniment/sessions/{sessionId}', [EmpathiaController::class, 'getSession']);
     Route::post('/accompaniment/sessions/{sessionId}/close', [EmpathiaController::class, 'closeSession']);
+    Route::get('/accompaniment/sessions/{sessionId}/summary', [EmpathiaController::class, 'getSessionSummary']);
     Route::post('/accompaniment/sessions/{sessionId}/turns', [EmpathiaController::class, 'createTurn']);
     Route::post('/accompaniment/sessions/{sessionId}/text', [EmpathiaController::class, 'postSessionText']);
     Route::get('/accompaniment/sessions/{sessionId}/events', [EmpathiaController::class, 'events']);

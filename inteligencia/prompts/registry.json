@@ -24,6 +24,10 @@
       "path": "system/empathia-v1.txt",
       "purpose": "Reglas base de acompanamiento seguro"
     },
+    "emotion-classifier-v1": {
+      "path": "system/emotion-classifier-v1.txt",
+      "purpose": "Clasificacion interna de la emocion predominante"
+    },
     "general-v1": {
       "path": "templates/general-v1.txt",
       "purpose": "Respuesta general para un turno de texto"

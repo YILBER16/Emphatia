@@ -70,7 +70,7 @@ es `prompt : emergencia-v1`, aunque la emocion sea distinta.
 El nombre es opcional y se valida antes de usarlo:
 
 ```powershell
-$body = '{"session_id":"demo","turn_id":"demo","student_id":"demo","locale":"es","text":"Estoy cansado","preferred_name":"Sofia"}'
+$body = '{"session_id":"demo","turn_id":"demo","student_id":"demo","locale":"es","text":"Estoy cansado","preferred_name":"Andrea"}'
 Invoke-RestMethod "http://127.0.0.1:8100/internal/v1/infer/turn" -Method Post -Headers $headers -ContentType "application/json" -Body $body | Select-Object reply,model_versions
 ```
 
