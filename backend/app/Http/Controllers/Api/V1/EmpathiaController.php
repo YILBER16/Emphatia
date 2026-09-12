@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\SessionEventBus;
 use App\Services\TurnOrchestrator;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -107,74 +108,72 @@ class EmpathiaController extends Controller
 
     /**
      * Ingreso Unity (pestaña Estudiante): nombre, documento, grado, sede, jornada.
-     * Busca el perfil activo creado/activado por admin, actualiza esos campos y emite token.
+     * Si el documento ya tiene perfil activo → valida y entra.
+     * Si no existe → registra un perfil nuevo (A puede dar de alta sin admin).
      */
     public function studentIdentify(Request $request, SessionEventBus $events)
     {
-        if ($request->filled('documento') && ! $request->filled('documento_numero')) {
-            $request->merge(['documento_numero' => $request->input('documento')]);
-        }
-        if ($request->filled('name') && ! $request->filled('nombre')) {
-            $request->merge(['nombre' => $request->input('name')]);
-        }
+        $data = $this->validateStudentSchoolFields($request);
+        $documento = $this->normalizeDocumento($data['documento_numero']);
 
-        $data = $request->validate([
-            'nombre' => 'required|string|max:120',
-            'documento_numero' => 'required|string|max:64',
-            'grado' => 'required|string|max:64',
-            'sede' => 'required|string|max:128',
-            'jornada' => 'required|string|max:64',
-        ]);
-
-        $documento = preg_replace('/\D+/', '', $data['documento_numero']) ?: trim($data['documento_numero']);
-        // Match exacto por documento (único). Nunca mezcla con otro perfil.
         $profile = StudentProfile::query()
             ->with('user')
-            ->where('is_active', true)
             ->where('documento_numero', $documento)
             ->first();
 
-        if (! $profile || ! $profile->user || $profile->user->role !== 'student') {
+        if ($profile) {
+            if (! $profile->is_active || ! $profile->user || $profile->user->role !== 'student') {
+                return response()->json([
+                    'error' => [
+                        'code' => 'INVALID_STUDENT_IDENTITY',
+                        'message' => 'Student profile exists but is inactive',
+                    ],
+                ], 401);
+            }
+
+            if (! $this->studentIdentityMatches($profile, $data)) {
+                return response()->json([
+                    'error' => [
+                        'code' => 'INVALID_STUDENT_IDENTITY',
+                        'message' => 'nombre does not match the active profile for this documento',
+                    ],
+                ], 401);
+            }
+
+            $this->refreshProfileFromSchoolFields($profile, $data, $documento);
+            $this->console('[B] Student identify profile_id='.$profile->id.' doc='.$documento);
+
+            return $this->issueStudentTokenResponse($profile->user->fresh(), $profile->fresh(), $events, 'student_identify');
+        }
+
+        $profile = $this->createStudentProfileFromSchoolFields($data, $documento, createdBy: null);
+        $this->console('[B] Student identify+register profile_id='.$profile->id.' doc='.$documento);
+
+        return $this->issueStudentTokenResponse($profile->user, $profile, $events, 'student_identify_register');
+    }
+
+    /**
+     * Alta explícita desde Unity (botón Registrarse): mismos 5 campos de A.
+     * Crea perfil aislado activo y entrega token (sin password).
+     */
+    public function studentRegister(Request $request, SessionEventBus $events)
+    {
+        $data = $this->validateStudentSchoolFields($request);
+        $documento = $this->normalizeDocumento($data['documento_numero']);
+
+        if (StudentProfile::query()->where('documento_numero', $documento)->exists()) {
             return response()->json([
                 'error' => [
-                    'code' => 'INVALID_STUDENT_IDENTITY',
-                    'message' => 'No active student profile matches documento_numero',
+                    'code' => 'STUDENT_ALREADY_REGISTERED',
+                    'message' => 'documento_numero already registered; use student-identify to enter',
                 ],
-            ], 401);
+            ], 422);
         }
 
-        if (! $this->studentIdentityMatches($profile, $data)) {
-            return response()->json([
-                'error' => [
-                    'code' => 'INVALID_STUDENT_IDENTITY',
-                    'message' => 'nombre does not match the active profile for this documento',
-                ],
-            ], 401);
-        }
+        $profile = $this->createStudentProfileFromSchoolFields($data, $documento, createdBy: null);
+        $this->console('[B] Student register profile_id='.$profile->id.' doc='.$documento);
 
-        // Actualiza SOLO este profile_id (fila aislada).
-        $nombre = trim($data['nombre']);
-        $profile->fill([
-            'nombre_preferencia' => $nombre,
-            'grado' => trim($data['grado']),
-            'sede' => trim($data['sede']),
-            'jornada' => trim($data['jornada']),
-            'documento_numero' => $documento,
-        ]);
-        if (trim((string) $profile->nombres) === ''
-            || $this->normalizeKey((string) $profile->nombres) === $this->normalizeKey((string) $profile->getOriginal('nombre_preferencia'))) {
-            $profile->nombres = $nombre;
-        }
-        $profile->save();
-
-        $student = $profile->user;
-        $student->display_name = $nombre;
-        $student->name = trim($profile->nombres.' '.$profile->apellidos) ?: $nombre;
-        $student->save();
-
-        $this->console('[B] Student identify profile_id='.$profile->id.' doc='.$profile->documento_numero.' nombre='.$nombre);
-
-        return $this->issueStudentTokenResponse($student, $profile, $events, 'student_identify');
+        return $this->issueStudentTokenResponse($profile->user, $profile, $events, 'student_register');
     }
 
     /**
@@ -733,6 +732,103 @@ class EmpathiaController extends Controller
             ],
             'closed_active_sessions' => $closed,
         ]);
+    }
+
+    private function validateStudentSchoolFields(Request $request): array
+    {
+        if ($request->filled('documento') && ! $request->filled('documento_numero')) {
+            $request->merge(['documento_numero' => $request->input('documento')]);
+        }
+        if ($request->filled('name') && ! $request->filled('nombre')) {
+            $request->merge(['nombre' => $request->input('name')]);
+        }
+
+        return $request->validate([
+            'nombre' => 'required|string|max:120',
+            'documento_numero' => 'required|string|max:64',
+            'grado' => 'required|string|max:64',
+            'sede' => 'required|string|max:128',
+            'jornada' => 'required|string|max:64',
+        ]);
+    }
+
+    private function normalizeDocumento(string $documentoNumero): string
+    {
+        $digits = preg_replace('/\D+/', '', $documentoNumero);
+
+        return ($digits !== null && $digits !== '') ? $digits : trim($documentoNumero);
+    }
+
+    private function refreshProfileFromSchoolFields(StudentProfile $profile, array $data, string $documento): void
+    {
+        $nombre = trim($data['nombre']);
+        $originalPref = (string) $profile->getOriginal('nombre_preferencia');
+
+        $profile->fill([
+            'nombre_preferencia' => $nombre,
+            'grado' => trim($data['grado']),
+            'sede' => trim($data['sede']),
+            'jornada' => trim($data['jornada']),
+            'documento_numero' => $documento,
+        ]);
+        if (trim((string) $profile->nombres) === ''
+            || $this->normalizeKey((string) $profile->nombres) === $this->normalizeKey($originalPref)) {
+            $profile->nombres = $nombre;
+        }
+        $profile->save();
+
+        $student = $profile->user;
+        $student->display_name = $nombre;
+        $student->name = trim($profile->nombres.' '.$profile->apellidos) ?: $nombre;
+        $student->save();
+    }
+
+    private function createStudentProfileFromSchoolFields(array $data, string $documento, ?int $createdBy): StudentProfile
+    {
+        $nombre = trim($data['nombre']);
+        $accessCode = $this->generateUniqueAccessCode();
+        $emailLocal = 'stu.'.Str::lower(preg_replace('/[^A-Za-z0-9]/', '', $documento)).'.'.Str::lower(Str::random(4));
+        $username = 'stu_'.Str::lower(preg_replace('/[^A-Za-z0-9]/', '', $documento));
+        if (User::query()->where('username', $username)->exists()) {
+            $username .= '_'.Str::lower(Str::random(4));
+        }
+
+        return DB::transaction(function () use ($data, $documento, $createdBy, $nombre, $accessCode, $emailLocal, $username) {
+            $user = User::query()->create([
+                'username' => $username,
+                'name' => $nombre,
+                'display_name' => $nombre,
+                'email' => $emailLocal.'@empathia.local',
+                'password' => null,
+                'role' => 'student',
+            ]);
+
+            return StudentProfile::query()->create([
+                'user_id' => $user->id,
+                'nombres' => $nombre,
+                'apellidos' => '-',
+                'nombre_preferencia' => $nombre,
+                'grado' => trim($data['grado']),
+                'edad' => 12,
+                'sede' => trim($data['sede']),
+                'jornada' => trim($data['jornada']),
+                'documento_numero' => $documento,
+                'acudiente_telefono' => 'pendiente',
+                'acudiente_documento' => 'pendiente',
+                'access_code' => $accessCode,
+                'is_active' => true,
+                'created_by' => $createdBy,
+            ])->load('user');
+        });
+    }
+
+    private function generateUniqueAccessCode(): string
+    {
+        do {
+            $code = strtoupper(Str::random(8));
+        } while (StudentProfile::query()->where('access_code', $code)->exists());
+
+        return $code;
     }
 
     private function studentIdentityMatches(StudentProfile $profile, array $data): bool

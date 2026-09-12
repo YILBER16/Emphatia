@@ -9,6 +9,7 @@ Route::get('/health', [EmpathiaController::class, 'health']);
 
 Route::post('/auth/login', [EmpathiaController::class, 'login']);
 Route::post('/auth/student-identify', [EmpathiaController::class, 'studentIdentify']);
+Route::post('/auth/student-register', [EmpathiaController::class, 'studentRegister']);
 Route::post('/auth/student-access', [EmpathiaController::class, 'studentAccess']);
 
 Route::middleware(AuthenticateApiToken::class)->group(function () {
