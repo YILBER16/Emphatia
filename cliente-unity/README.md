@@ -2,9 +2,12 @@
 
 Proyecto Unity 6 en `avatar/`.
 
+**Ruta de este PC (disco D):** `D:\Emphatia\cliente-unity\avatar`  
+No abras `C:\Emphatia\...` (copia vieja). Atajo: `.\cliente-unity\tools\abrir-unity.ps1`
+
 ## Pantalla de inicio de sesión
 
-1. Abre el proyecto `avatar/` en **Unity Hub** (Unity 6).
+1. Abre el proyecto `D:\Emphatia\cliente-unity\avatar` en **Unity Hub** (Unity 6).
 2. Abre la escena `Assets/Scenes/Login.unity`.
 3. En Hierarchy debe existir el objeto **EmpathiaLogin** (con `LoginScreenController`).
 4. Pulsa **Play** ▶ (la UI se crea en Play, no en edición).

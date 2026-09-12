@@ -1,7 +1,8 @@
 # Aprendizaje — Rol A (Avatar / Unity)
 
 **Misión actual:** M2-A · Turno con audio  
-**Carpeta de trabajo:** `cliente-unity/`
+**Carpeta de trabajo:** `D:\Emphatia\cliente-unity\`  
+Abrir Unity: `.\cliente-unity\tools\abrir-unity.ps1` (no uses `C:\Emphatia`).
 
 ---
 
