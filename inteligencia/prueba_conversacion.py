@@ -34,20 +34,38 @@ def humanized_reply(name: str, emotion: str, history: list[dict]) -> str:
     if substantive_history:
         if emotion == "sadness":
             return (
-                f"{greeting}entiendo que te duela sentir que puedes decepcionar a tu familia. "
-                "Lo que sientes merece ser escuchado; ¿qué te gustaría que ellos comprendieran "
-                "de lo que estás viviendo?"
+                f"{greeting}puedo entender por qué eso te pesa. Sentir miedo a decepcionar a "
+                "quienes quieres puede doler mucho. ¿Qué te gustaría que tu familia pudiera "
+                "comprender de ti?"
             )
         return (
-            f"{greeting}gracias por volver sobre esto. Noto que sigues intentando "
-            "entender lo que estás sintiendo. ¿Qué necesitas ahora?"
+            f"{greeting}gracias por seguir conversando conmigo. Estoy atento a lo que necesitas, "
+            "sin apresurarte. ¿Qué parte te gustaría explorar ahora?"
         )
     if emotion == "anxiety":
         return (
-            f"{greeting}suena a que tienes muchas cosas dando vueltas. "
-            "Podemos ir paso a paso; ¿qué parte te preocupa más ahora?"
+            f"{greeting}te escucho; parece que tu mente está intentando resolver demasiadas cosas "
+            "a la vez. Podemos tomar solo una por ahora. ¿Qué preocupación está más presente?"
         )
-    return f"{greeting}gracias por contármelo. ¿Qué es lo que más te está pesando ahora?"
+    return f"{greeting}gracias por confiarme esto. Quiero entenderte sin juzgarte; ¿qué sería lo más útil para ti en este momento?"
+
+
+def conversation_summary(history: list[dict]) -> str:
+    lines = []
+    turn_number = 0
+    current_user_message = None
+    for item in history:
+        if item["speaker"] == "usuario":
+            if item["text"].startswith("Me gustaría que me llamaras"):
+                continue
+            turn_number += 1
+            current_user_message = item["text"]
+        elif item["speaker"] == "ia" and current_user_message:
+            lines.append(
+                f"Turno {turn_number} | Usuario: {current_user_message} | IA: {item['text']}"
+            )
+            current_user_message = None
+    return "\n".join(lines)
 
 
 def main() -> int:
@@ -100,6 +118,12 @@ def main() -> int:
             {"speaker": "ia", "text": response},
         ])
 
+    summary = conversation_summary(history)
+    print("\nRESUMEN DE LA CONVERSACION", flush=True)
+    print(summary, flush=True)
+    if summary.count("Turno ") != len(messages):
+        print("ERROR: el resumen no contiene todos los turnos", flush=True)
+        return 1
     print("\nRESULTADO: PRUEBA OK", flush=True)
     return 0
 

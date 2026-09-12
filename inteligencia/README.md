@@ -48,3 +48,29 @@ python servidor_simulado.py
 
 No guardes la clave en el repositorio ni la compartas por chat. El endpoint de
 health mostrara `authentication: "api_key"`, pero nunca devolvera la clave.
+
+## Memoria por sesion
+
+C guarda los turnos en archivos JSON separados por `session_id` dentro de:
+
+```text
+{EMPATHIA_DATA_ROOT}/inteligencia/memory/conversations/
+```
+
+Cada `InferTurn` lee esa memoria cuando B no envia historial, genera la
+respuesta con el contexto de los ultimos 12 turnos y guarda el nuevo par
+`usuario`/`ia`. B puede seguir enviando `conversation_history`; si lo hace,
+C lo usa como contexto del turno y tambien actualiza su memoria local.
+
+Inicializar o borrar una sesion:
+
+```powershell
+$headers = @{ "X-Internal-Token" = "empathia-internal-dev-token" }
+$body = @{ session_id = "SESSION_ID" } | ConvertTo-Json
+Invoke-RestMethod "http://127.0.0.1:8100/internal/v1/memory/prepare" -Method Post -Headers $headers -ContentType "application/json" -Body $body
+Invoke-RestMethod "http://127.0.0.1:8100/internal/v1/memory/purge" -Method Post -Headers $headers -ContentType "application/json" -Body $body
+```
+
+Con `VERTEX_AI_ENABLED=false`, C usa una respuesta local contextual y lo
+indica en los logs como `STUB reply`. Con `VERTEX_AI_ENABLED=true`, el texto y
+el audio transcrito pasan por Gemini; los logs muestran `GEMINI respuesta`.

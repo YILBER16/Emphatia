@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""EmpathIA Intelligence stub (module C) — Phase 0.
+"""EmpathIA Intelligence service (module C) — Phase 0.
 
 Listens on 0.0.0.0:8100 (LAN). Override with INTEL_HOST / INTEL_PORT.
 Implements internal InferTurn + health + memory stubs.
@@ -28,6 +28,8 @@ VERTEX_AI_MODEL = os.environ.get("VERTEX_AI_MODEL", "gemini-2.5-flash")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DATA_ROOT = Path(os.environ.get("EMPATHIA_DATA_ROOT", str(REPO_ROOT / "datos")))
+CONVERSATION_MEMORY_ROOT = DATA_ROOT / "inteligencia" / "memory" / "conversations"
+MEMORY_PROMPT_TURNS = 12
 PROMPTS_ROOT = Path(__file__).resolve().parent / "prompts"
 PROMPTS_REGISTRY = PROMPTS_ROOT / "registry.json"
 FIXTURE_EXPRESSION = REPO_ROOT / "expresion" / "fixtures" / "paquete-expresion-ejemplo.json"
@@ -88,6 +90,61 @@ def sanitize_preferred_name(value: object) -> str:
     return name
 
 
+def extract_preferred_name(student_text: str) -> str:
+    match = re.search(r"\bme llamo\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ'\- ]{1,40})", student_text, re.IGNORECASE)
+    if not match:
+        return ""
+    return sanitize_preferred_name(match.group(1).strip(" .,!?:;"))
+
+
+def conversation_memory_path(session_id: object) -> Path:
+    safe_session_id = re.sub(r"[^A-Za-z0-9_-]", "_", str(session_id or "unknown"))
+    return CONVERSATION_MEMORY_ROOT / f"{safe_session_id}.json"
+
+
+def load_conversation_memory(session_id: object) -> list[dict]:
+    path = conversation_memory_path(session_id)
+    if not path.exists():
+        return []
+    try:
+        content = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    return content if isinstance(content, list) else []
+
+
+def save_conversation_memory(session_id: object, history: list[dict]) -> bool:
+    path = conversation_memory_path(session_id)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = path.with_suffix(".tmp")
+        temporary_path.write_text(
+            json.dumps(history, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        temporary_path.replace(path)
+        return True
+    except OSError as error:
+        print(f"[C] memoria error session={session_id}: {error}", flush=True)
+        return False
+
+
+def prompt_history(history: list[dict]) -> list[dict]:
+    return history[-(MEMORY_PROMPT_TURNS * 2):]
+
+
+def purge_conversation_memory(session_id: object) -> bool:
+    path = conversation_memory_path(session_id)
+    try:
+        if not path.exists():
+            return False
+        path.unlink()
+        return True
+    except OSError as error:
+        print(f"[C] memoria purge error session={session_id}: {error}", flush=True)
+        return False
+
+
 def normalize_emotion_label(value: str) -> str:
     aliases = {
         "alegria": "joy",
@@ -133,7 +190,7 @@ def infer_emotion(student_text: str) -> tuple[str, float]:
         ),
         "joy": (
             "feliz", "contento", "contenta", "alegre", "emocionado", "emocionada",
-            "me hace ilusion", "estoy orgulloso", "estoy orgullosa",
+            "me hace ilusion", "orgulloso", "orgullosa",
         ),
     }
     scores = {
@@ -184,6 +241,86 @@ def detect_risk_signals(student_text: str) -> tuple[list[dict], str]:
                     }
                 ], severity
     return [], "low"
+
+
+def build_contextual_reply(
+    student_text: str,
+    preferred_name: str,
+    emotion_label: str,
+    risk_level: str,
+    conversation_history: list[dict],
+) -> str:
+    """Build a response around the user's actual message and conversation state."""
+    text = student_text.lower()
+    greeting = f"{preferred_name}, " if preferred_name else ""
+    has_history = any(item.get("speaker") == "usuario" for item in conversation_history)
+
+    if risk_level == "emergency":
+        return (
+            f"{greeting}lamento que estés pasando por esto. Tu seguridad importa mucho: busca ahora mismo "
+            "a un adulto de confianza y contacta a los servicios de emergencia de tu localidad. "
+            "¿Hay alguien contigo que pueda acompañarte en este momento?"
+        )
+    if risk_level == "high":
+        return (
+            f"{greeting}gracias por confiarme algo tan importante. No tienes que afrontar esto a solas; "
+            "busquemos a una persona adulta que pueda acompañarte hoy. ¿A quién podrías avisarle ahora?"
+        )
+    if "me llamo" in text:
+        return (
+            f"Mucho gusto, {preferred_name or 'gracias por decírmelo'}. Quiero conocerte a tu ritmo y "
+            "escuchar lo que hoy te resulte más importante. ¿Qué te gustaría contarme primero?"
+        )
+    if "familia" in text or "decepcionar" in text or "papa" in text or "mama" in text:
+        return (
+            f"{greeting}entiendo que esto te toque tan de cerca; cuando pensamos en la familia, la presión "
+            "puede sentirse muy pesada. No tienes que demostrarme nada ni explicarlo perfectamente. "
+            "¿Qué te gustaría que ellos entendieran de lo que estás viviendo?"
+        )
+    if "descans" in text or "dormir" in text or "pensando" in text or "no puedo parar" in text:
+        return (
+            f"{greeting}suena agotador intentar descansar mientras las preocupaciones siguen dando vueltas. "
+            "Podemos separar lo urgente de lo que puede esperar y tomar una cosa a la vez. "
+            "¿Qué pensamiento aparece con más fuerza cuando intentas dormir?"
+        )
+    if "organizar" in text or "pendiente" in text or "estudiar" in text or "examen" in text:
+        return (
+            f"{greeting}veo que estás intentando encontrar una forma concreta de recuperar un poco de control. "
+            "Podemos convertirlo en un paso pequeño y realista, sin exigirte resolverlo todo hoy. "
+            "¿Qué tarea te daría más alivio si la dejaras encaminada primero?"
+        )
+    if "tranquil" in text or "mejor" in text or "gracias" in text:
+        return (
+            f"{greeting}me alegra saber que notas aunque sea un poco de alivio, y gracias por contármelo. "
+            "Podemos quedarnos con lo que te ayudó y pensar cómo repetirlo cuando vuelva la preocupación. "
+            "¿Qué cambió dentro de ti o a tu alrededor para sentirte así?"
+        )
+    if emotion_label == "sadness":
+        return (
+            f"{greeting}puedo notar que esto te está doliendo, y tiene sentido que necesites espacio para "
+            "decirlo sin que te apuren. Estoy aquí para escucharte y entender el motivo, no para juzgarte. "
+            "¿Qué parte de todo esto pesa más ahora mismo?"
+        )
+    if emotion_label == "anxiety":
+        return (
+            f"{greeting}te escucho; parece que estás intentando manejar demasiadas preocupaciones a la vez. "
+            "No hace falta resolverlas todas en este momento: podemos mirar primero la que más aprieta. "
+            "¿Qué es lo que más te preocupa ahora?"
+        )
+    if emotion_label == "joy":
+        return (
+            f"{greeting}me alegra escuchar esa parte positiva de lo que cuentas. Quiero entender qué significa "
+            "para ti y acompañarte también en los momentos que te hacen bien. ¿Qué fue lo mejor de hoy?"
+        )
+    if has_history:
+        return (
+            f"{greeting}gracias por seguir compartiendo esto conmigo. Tomo en cuenta lo que ya me contaste y "
+            "podemos avanzar desde ahí, sin apresurarte. ¿Qué aspecto te gustaría mirar con más calma?"
+        )
+    return (
+        f"{greeting}gracias por confiarme esto. Quiero comprender qué significa para ti, no responderte con "
+        "una frase automática. ¿Qué fue lo primero que sentiste cuando ocurrió?"
+    )
 
 
 def load_prompt(
@@ -392,7 +529,7 @@ class Handler(BaseHTTPRequestHandler):
                         "whisper": "stub",
                         "ollama": "stub",
                         "tts": "stub",
-                        "memory": "stub",
+                        "memory": "session-file",
                     },
                 },
             )
@@ -412,17 +549,30 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/internal/v1/memory/prepare":
-            _ = read_json(self)
-            json_response(self, 200, {"ok": True, "memory": {"ready": True}})
+            body = read_json(self)
+            session_id = body.get("session_id")
+            if not session_id:
+                json_response(self, 422, {"error": {"code": "SESSION_REQUIRED", "message": "session_id is required"}})
+                return
+            history = load_conversation_memory(session_id)
+            path = conversation_memory_path(session_id)
+            was_created = not path.exists()
+            if was_created and not save_conversation_memory(session_id, history):
+                json_response(self, 500, {"error": {"code": "MEMORY_UNAVAILABLE", "message": "Could not initialize memory"}})
+                return
+            print(f"[C] memoria preparada turnos={len(history) // 2} session={session_id}", flush=True)
+            json_response(self, 200, {"ok": True, "memory": {"ready": True, "updated": was_created}})
             return
 
         if path == "/internal/v1/memory/purge":
             body = read_json(self)
-            student_id = body.get("student_id", "unknown")
-            target = DATA_ROOT / "intelligence" / "memory" / str(student_id)
-            if target.exists():
-                shutil.rmtree(target, ignore_errors=True)
-            json_response(self, 200, {"ok": True, "purged": student_id})
+            session_id = body.get("session_id")
+            if not session_id:
+                json_response(self, 422, {"error": {"code": "SESSION_REQUIRED", "message": "session_id is required"}})
+                return
+            purged = purge_conversation_memory(session_id)
+            print(f"[C] memoria purgada session={session_id} purged={purged}", flush=True)
+            json_response(self, 200, {"ok": True, "memory": {"purged": purged}, "session_id": session_id})
             return
 
         if path == "/internal/v1/infer/turn":
@@ -441,11 +591,15 @@ class Handler(BaseHTTPRequestHandler):
             emotion_confidence = emotion_input.get("confidence") if isinstance(
                 emotion_input.get("confidence"), (int, float)
             ) else None
-            conversation_history = body.get("conversation_history")
-            if not isinstance(conversation_history, list):
-                conversation_history = []
+            request_history = body.get("conversation_history")
+            if not isinstance(request_history, list):
+                request_history = []
+            stored_history = load_conversation_memory(body.get("session_id"))
+            conversation_history = prompt_history(request_history or stored_history)
             risk_level = body.get("risk_level") if isinstance(body.get("risk_level"), str) else "low"
             preferred_name = sanitize_preferred_name(body.get("preferred_name"))
+            if not preferred_name and student_text:
+                preferred_name = extract_preferred_name(student_text)
             if student_text and not emotion_label:
                 emotion_label, emotion_confidence = infer_emotion(student_text)
             risk_signals, detected_risk_level = detect_risk_signals(student_text)
@@ -469,33 +623,14 @@ class Handler(BaseHTTPRequestHandler):
                     )
                     print(f"[C] GEMINI respuesta session={body.get('session_id')} | {reply_text}", flush=True)
                 else:
-                    greeting = f"{preferred_name}, " if preferred_name else ""
-                    if risk_level == "emergency":
-                        reply_text = (
-                            f"{greeting}lamento que estés pasando por esto. Tu seguridad es lo más importante: "
-                            "busca ahora mismo a un adulto de confianza y contacta a los servicios de emergencia "
-                            "de tu localidad. ¿Hay alguien contigo en este momento?"
-                        )
-                    elif risk_level == "high":
-                        reply_text = (
-                            f"{greeting}gracias por decirlo. No tienes que afrontar esto a solas; busca hoy a un "
-                            "adulto de confianza o a tu orientador. ¿Puedes decirme quién podría acompañarte?"
-                        )
-                    elif conversation_history:
-                        reply_text = (
-                            f"{greeting}gracias por volver sobre esto. Noto que sigues intentando entender "
-                            "lo que estás sintiendo. ¿Qué cambió desde la última vez que me lo contaste?"
-                        )
-                    elif emotion_label == "anxiety":
-                        reply_text = (
-                            f"{greeting}suena a que tienes muchas cosas dando vueltas. Podemos ir paso a paso; "
-                            "¿qué parte de los exámenes te preocupa más ahora?"
-                        )
-                    else:
-                        reply_text = (
-                            f"{greeting}gracias por contármelo. Quiero entenderte bien; "
-                            "¿qué es lo que más te está pesando ahora?"
-                        )
+                    print(f"[C] STUB reply session={body.get('session_id')} motivo=VERTEX_AI_ENABLED=false", flush=True)
+                    reply_text = build_contextual_reply(
+                        student_text,
+                        preferred_name,
+                        emotion_label,
+                        risk_level,
+                        conversation_history,
+                    )
                     llm_version = "stub-ollama"
                     llm_ms = 80
             else:
@@ -506,23 +641,45 @@ class Handler(BaseHTTPRequestHandler):
                 risk_signals, detected_risk_level = detect_risk_signals(student_text)
                 if detected_risk_level != "low" and risk_level == "low":
                     risk_level = detected_risk_level
-                reply_text = (
-                    "Gracias por contármelo. Estoy aquí para acompañarte. "
-                    "¿Quieres contarme un poco más sobre cómo te ha ido el día?"
-                )
-                llm_version = "stub-ollama"
-                llm_ms = 80
-
-            if not conversation_history:
-                introduction = "Hola, soy EmpathIA, una IA de apoyo emocional."
-                if preferred_name:
-                    introduction += f" Gracias por estar aquí, {preferred_name}."
+                if VERTEX_AI_ENABLED:
+                    reply_text, llm_version, prompt_version, llm_ms = generate_vertex_reply(
+                        student_text,
+                        emotion_label,
+                        risk_level,
+                        preferred_name,
+                        conversation_history,
+                    )
+                    print(f"[C] GEMINI respuesta session={body.get('session_id')} | {reply_text}", flush=True)
                 else:
-                    introduction += " ¿Cómo te gustaría que te llamara?"
+                    print(f"[C] STUB reply session={body.get('session_id')} motivo=VERTEX_AI_ENABLED=false", flush=True)
+                    reply_text = build_contextual_reply(
+                        student_text,
+                        preferred_name,
+                        emotion_label,
+                        risk_level,
+                        conversation_history,
+                    )
+                    llm_version = "stub-ollama"
+                    llm_ms = 80
+
+            if not conversation_history and not preferred_name:
+                introduction = "Hola, soy EmpathIA, una IA de apoyo emocional."
+                introduction += " ¿Cómo te gustaría que te llamara?"
                 reply_text = f"{introduction} {reply_text}"
 
             emotion_confidence = emotion_confidence if emotion_confidence is not None else 0.62
             prompt_version = active_prompt_name(select_prompt_key(emotion_label, risk_level))
+
+            updated_history = [
+                *conversation_history,
+                {"speaker": "usuario", "text": student_text},
+                {"speaker": "ia", "text": reply_text},
+            ]
+            memory_updated = save_conversation_memory(body.get("session_id"), updated_history)
+            print(
+                f"[C] memoria turnos={len(updated_history) // 2} session={body.get('session_id')} updated={memory_updated}",
+                flush=True,
+            )
 
             out_dir = DATA_ROOT / "audio" / "output" / str(body.get("session_id", "session"))
             out_dir.mkdir(parents=True, exist_ok=True)
@@ -563,7 +720,7 @@ class Handler(BaseHTTPRequestHandler):
                 },
                 "timing": {"quality": "low", "cues": cues},
                 "expression": expression,
-                "memory": {"updated": True},
+                "memory": {"updated": memory_updated},
                 "model_versions": {
                     "stt": stt_version,
                     "llm": llm_version,

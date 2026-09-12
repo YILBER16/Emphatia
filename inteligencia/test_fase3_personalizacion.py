@@ -74,7 +74,7 @@ class Fase3PersonalizacionTests(unittest.TestCase):
             Path(__file__).resolve().parent / "servidor_simulado.py"
         ).read_text(encoding="utf-8")
         self.assertIn("Hola, soy EmpathIA, una IA de apoyo emocional.", source)
-        self.assertIn("if not conversation_history:", source)
+        self.assertIn("if not conversation_history and not preferred_name:", source)
 
     def test_history_is_added_to_the_prompt(self):
         prompt, _ = load_prompt(
