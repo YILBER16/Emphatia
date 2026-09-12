@@ -16,6 +16,16 @@ namespace Empathia
     }
 
     [Serializable]
+    public class StudentIdentifyRequest
+    {
+        public string nombre;
+        public string documento_numero;
+        public string grado;
+        public string sede;
+        public string jornada;
+    }
+
+    [Serializable]
     public class LoginResponse
     {
         public string token;

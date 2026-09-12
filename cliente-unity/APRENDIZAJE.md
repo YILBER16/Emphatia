@@ -30,15 +30,15 @@ cliente-unity/avatar/Assets/Scripts/Empathia/
 
 Escena: `avatar/Assets/Scenes/Login.unity`
 
-**Flujo principal (Fase 4 — sin password del niño):**
+**Flujo que sí funciona hoy (sin tocar B):**
 
 1. Abrir escena **Login** → **Play**
-2. Servidor: `http://192.168.1.31:8000/api/v1` (o la IP de B)
-3. Login adulto: `orientador1` / `password` (o `admin1`)
-4. Pantalla **Elegir estudiante** → tocar un perfil activo
-5. Confirm → Salud → texto/audio a B
+2. Servidor: `http://127.0.0.1:8000/api/v1` (o la IP de B)
+3. Pestaña **Adulto** → `orientador1` / `password` → elegir estudiante
+4. Confirm → Salud → texto/audio a B
 
-**Demo legado:** `estudiante1` / `password` salta la lista (solo lab).
+**Pestaña Estudiante (UI lista en A):** nombre, documento, grado, sede, jornada.  
+Hasta que B publique `POST /auth/student-identify`, **Ingresar** avisará que use Adulto. No cambiamos `backend/` ni `contratos/`.
 
 Los perfiles los crea el admin en B (`POST /api/v1/admin/students`).
 

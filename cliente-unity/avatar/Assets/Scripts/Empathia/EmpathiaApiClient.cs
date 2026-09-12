@@ -83,6 +83,62 @@ namespace Empathia
                 });
         }
 
+        public IEnumerator IdentifyStudent(
+            string nombre,
+            string documento,
+            string grado,
+            string sede,
+            string jornada,
+            Action<bool, string> onDone)
+        {
+            var body = new StudentIdentifyRequest
+            {
+                nombre = nombre,
+                documento_numero = documento,
+                grado = grado,
+                sede = sede,
+                jornada = jornada,
+            };
+
+            yield return SendJson(
+                "POST",
+                EmpathiaAuthState.BaseUrl.TrimEnd('/') + "/auth/student-identify",
+                JsonUtility.ToJson(body),
+                bearer: null,
+                (ok, code, text) =>
+                {
+                    if (!ok)
+                    {
+                        if (code == 404 || code == 405)
+                        {
+                            onDone(false, "B aún no tiene ingreso por documento. Usa la pestaña Adulto (orientador1 / password).");
+                            return;
+                        }
+
+                        onDone(false, MapError(code, text, "No se pudo ingresar con los datos del estudiante."));
+                        return;
+                    }
+
+                    var parsed = JsonUtility.FromJson<AssumeStudentResponse>(text);
+                    if (parsed == null || string.IsNullOrEmpty(parsed.token))
+                    {
+                        onDone(false, "Respuesta de ingreso sin token.");
+                        return;
+                    }
+
+                    EmpathiaAuthState.Token = parsed.token;
+                    EmpathiaAuthState.AdultToken = null;
+                    EmpathiaAuthState.Role = parsed.user != null ? parsed.user.role : "student";
+                    EmpathiaAuthState.StudentUserId = parsed.user != null ? parsed.user.id : null;
+                    EmpathiaAuthState.StudentDisplayName = parsed.profile != null && !string.IsNullOrEmpty(parsed.profile.nombre_preferencia)
+                        ? parsed.profile.nombre_preferencia
+                        : (parsed.user != null ? parsed.user.display_name : nombre);
+                    EmpathiaAuthState.Username = EmpathiaAuthState.StudentDisplayName;
+                    EmpathiaAuthState.ClearSessionMemory();
+                    onDone(true, "Ingreso estudiante OK: " + EmpathiaAuthState.StudentDisplayName);
+                });
+        }
+
         public IEnumerator ListStudents(Action<bool, string, StudentListItem[]> onDone)
         {
             var bearer = !string.IsNullOrEmpty(EmpathiaAuthState.AdultToken)
@@ -982,6 +1038,8 @@ namespace Empathia
             {
                 case "INVALID_CREDENTIALS":
                     return "Usuario o contraseña incorrectos.";
+                case "INVALID_STUDENT_IDENTITY":
+                    return "Los datos no coinciden. Revisa nombre, documento, grado, sede y jornada.";
                 case "SESSION_ALREADY_ACTIVE":
                     return "Ya hay una sesión activa. Ciérrala con el botón o pide a B que la cierre.";
                 case "FORBIDDEN":

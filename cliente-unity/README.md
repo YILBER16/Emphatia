@@ -10,8 +10,8 @@ Proyecto Unity 6 en `avatar/`.
 4. Pulsa **Play** ▶ (la UI se crea en Play, no en edición).
 5. Debe aparecer la tarjeta **Inicio de sesión**. Si no, mira la Console por `[Empathia] LoginScreenController activo`.
 4. Servidor: `http://127.0.0.1:8000/api/v1` (mismo PC). Si B está en otro PC: `http://IP_DE_B:8000/api/v1`.
-5. Usuario / contraseña lab: `estudiante1` / `password`.
-6. **Iniciar sesión** → debes ver **Login OK** y un token parcial.
+5. Pestaña **Adulto** (flujo actual de B): `orientador1` / `password` → elige un estudiante de la lista.
+6. Pestaña **Estudiante**: UI lista; el ingreso por documento espera la ruta de B. Mientras tanto usa Adulto.
 
 Scripts: `avatar/Assets/Scripts/Empathia/` (la UI se crea sola al dar Play).
 

@@ -67,6 +67,17 @@ namespace Empathia
         TMP_InputField _baseUrl;
         TMP_InputField _user;
         TMP_InputField _pass;
+        TMP_InputField _studentName;
+        TMP_InputField _studentDoc;
+        TMP_InputField _studentGrade;
+        TMP_InputField _studentCampus;
+        TMP_InputField _studentShift;
+        GameObject _studentLoginPanel;
+        GameObject _adultLoginPanel;
+        Button _studentLoginBtn;
+        Button _tabStudentBtn;
+        Button _tabAdultBtn;
+        bool _studentTab = true;
         TMP_InputField _typedMessage;
         TextMeshProUGUI _status;
         TextMeshProUGUI _state;
@@ -391,14 +402,14 @@ namespace Empathia
             _cardShadowGo = shadow.gameObject;
             var shadowRt = shadow.rectTransform;
             shadowRt.anchorMin = shadowRt.anchorMax = shadowRt.pivot = new Vector2(0.5f, 0.42f);
-            shadowRt.sizeDelta = new Vector2(510, 470);
+            shadowRt.sizeDelta = new Vector2(530, 690);
             shadowRt.anchoredPosition = new Vector2(0, -6);
 
             var card = CreateImage(_loginView.transform, "Card", CardGlass);
             ApplyRounded(card, RoundSprite(256, 48), 1.05f);
             _cardRt = card.rectTransform;
-            _cardRt.anchorMin = _cardRt.anchorMax = _cardRt.pivot = new Vector2(0.5f, 0.42f);
-            _cardRt.sizeDelta = new Vector2(500, 480);
+            _cardRt.anchorMin = _cardRt.anchorMax = _cardRt.pivot = new Vector2(0.5f, 0.46f);
+            _cardRt.sizeDelta = new Vector2(520, 700);
             _cardRt.anchoredPosition = Vector2.zero;
 
             var content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup));
@@ -417,18 +428,103 @@ namespace Empathia
             v.padding = new RectOffset(0, 0, 4, 0);
 
             _baseUrl = AddCompactInput(content.transform, "Servidor", EmpathiaAuthState.BaseUrl);
-            _user = AddIconInput(content.transform, "Adulto (admin1 / orientador1)", "orientador1", "user", false);
-            _pass = AddIconInput(content.transform, "Contraseña", "password", "lock", true);
 
-            _checkBBtn = AddOutlineButton(content.transform, "Probar conexión B", 52, OnCheckConnectionB);
-            _loginBtn = AddGradientButton(content.transform, "Iniciar sesión", 64, OnLogin);
-            _registerBtn = AddOutlineButton(content.transform, "Registrarse", 58, () =>
-            {
-                SetLoginStatus("Los perfiles los crea el admin en B (API). Demo legado: estudiante1.");
-            });
+            var tabs = AddRow(content.transform, 44);
+            _tabStudentBtn = AddGradientButton(tabs, "Estudiante", 44, () => ShowLoginTab(true), 16f);
+            _tabAdultBtn = AddOutlineButton(tabs, "Adulto", 44, () => ShowLoginTab(false));
 
-            AddLabel(content.transform, "Adulto entra → elige estudiante → sesión.", 14, FontStyles.Normal, Muted, 20, TextAlignmentOptions.Center);
+            _studentLoginPanel = CreateLoginPanel(content.transform, "StudentFields");
+            _studentName = AddIconInput(_studentLoginPanel.transform, "Nombre", "Estudiante Uno", "user", false);
+            _studentDoc = AddIconInput(_studentLoginPanel.transform, "Número de documento", "1000000001", "lock", false);
+            _studentGrade = AddIconInput(_studentLoginPanel.transform, "Grado", "8°", "user", false);
+            _studentCampus = AddIconInput(_studentLoginPanel.transform, "Sede", "Sede Lab", "user", false);
+            _studentShift = AddIconInput(_studentLoginPanel.transform, "Jornada (mañana / tarde)", "mañana", "user", false);
+            _studentLoginBtn = AddGradientButton(_studentLoginPanel.transform, "Ingresar", 58, OnStudentLogin);
+
+            _adultLoginPanel = CreateLoginPanel(content.transform, "AdultFields");
+            _user = AddIconInput(_adultLoginPanel.transform, "Adulto (admin1 / orientador1)", "orientador1", "user", false);
+            _pass = AddIconInput(_adultLoginPanel.transform, "Contraseña", "password", "lock", true);
+            _checkBBtn = AddOutlineButton(_adultLoginPanel.transform, "Probar conexión B", 48, OnCheckConnectionB);
+            _loginBtn = AddGradientButton(_adultLoginPanel.transform, "Iniciar sesión", 58, OnLogin);
+
+            _registerBtn = AddOutlineButton(content.transform, "Registrarse", 50, OnRegister);
+            AddLabel(content.transform, "Estudiante: nombre, documento, grado, sede y jornada.", 13, FontStyles.Normal, Muted, 20, TextAlignmentOptions.Center);
             _loginStatus = AddLabel(content.transform, "", 12, FontStyles.Normal, new Color(0.75f, 0.25f, 0.35f), 36, TextAlignmentOptions.Center);
+            ShowLoginTab(true);
+        }
+
+        GameObject CreateLoginPanel(Transform parent, string name)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
+            go.transform.SetParent(parent, false);
+            var v = go.GetComponent<VerticalLayoutGroup>();
+            v.spacing = 10;
+            v.childAlignment = TextAnchor.UpperCenter;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+            go.GetComponent<LayoutElement>().flexibleWidth = 1f;
+            var fitter = go.AddComponent<ContentSizeFitter>();
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            return go;
+        }
+
+        void ShowLoginTab(bool student)
+        {
+            _studentTab = student;
+            if (_studentLoginPanel != null)
+                _studentLoginPanel.SetActive(student);
+            if (_adultLoginPanel != null)
+                _adultLoginPanel.SetActive(!student);
+            ApplyLayout();
+            SetLoginStatus(student
+                ? "Escribe tus datos escolares y pulsa Ingresar."
+                : "Adulto: entra y luego elige un estudiante.");
+        }
+
+        void OnRegister()
+        {
+            SetLoginStatus("Los perfiles los crea el admin en B. El estudiante no se registra aquí.");
+        }
+
+        void OnStudentLogin()
+        {
+            if (_busy) return;
+            EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
+                ? "http://127.0.0.1:8000/api/v1"
+                : _baseUrl.text.Trim();
+
+            var nombre = _studentName != null ? _studentName.text.Trim() : "";
+            var documento = _studentDoc != null ? _studentDoc.text.Trim() : "";
+            var grado = _studentGrade != null ? _studentGrade.text.Trim() : "";
+            var sede = _studentCampus != null ? _studentCampus.text.Trim() : "";
+            var jornada = _studentShift != null ? _studentShift.text.Trim() : "";
+
+            if (string.IsNullOrWhiteSpace(nombre) || string.IsNullOrWhiteSpace(documento)
+                || string.IsNullOrWhiteSpace(grado) || string.IsNullOrWhiteSpace(sede)
+                || string.IsNullOrWhiteSpace(jornada))
+            {
+                SetLoginStatus("Completa nombre, documento, grado, sede y jornada.");
+                return;
+            }
+
+            SetBusy(true);
+            SetLoginStatus("Ingresando con tus datos escolares…");
+            StartCoroutine(_api.IdentifyStudent(nombre, documento, grado, sede, jornada, (ok, msg) =>
+            {
+                SetBusy(false);
+                if (!ok)
+                {
+                    SetLoginStatus("Error: " + msg);
+                    Debug.Log("[Empathia] ERROR ingreso estudiante: " + msg);
+                    return;
+                }
+
+                Debug.Log("[Empathia] " + msg);
+                SetLoginStatus("Ingreso OK. Confirma para continuar.");
+                ShowScreen(UiScreen.Confirm);
+            }));
         }
 
         void OnCheckConnectionB()
@@ -808,8 +904,19 @@ namespace Empathia
 
             if (_cardRt != null)
             {
-                _cardRt.anchorMin = _cardRt.anchorMax = new Vector2(0.5f, 0.42f);
-                _cardRt.sizeDelta = new Vector2(500, 480);
+                var tall = _studentTab;
+                _cardRt.anchorMin = _cardRt.anchorMax = new Vector2(0.5f, tall ? 0.46f : 0.42f);
+                _cardRt.sizeDelta = tall ? new Vector2(520, 700) : new Vector2(500, 520);
+            }
+            if (_cardShadowGo != null)
+            {
+                var shadowRt = _cardShadowGo.GetComponent<RectTransform>();
+                if (shadowRt != null)
+                {
+                    shadowRt.anchorMin = shadowRt.anchorMax = _cardRt != null ? _cardRt.anchorMin : new Vector2(0.5f, 0.46f);
+                    shadowRt.sizeDelta = _studentTab ? new Vector2(530, 690) : new Vector2(510, 510);
+                    shadowRt.anchoredPosition = new Vector2(0, -6);
+                }
             }
             if (_confirmRt != null)
                 _confirmRt.sizeDelta = new Vector2(520, 360);
@@ -1532,6 +1639,9 @@ namespace Empathia
         {
             _busy = busy;
             if (_loginBtn != null) _loginBtn.interactable = !busy;
+            if (_studentLoginBtn != null) _studentLoginBtn.interactable = !busy;
+            if (_tabStudentBtn != null) _tabStudentBtn.interactable = !busy;
+            if (_tabAdultBtn != null) _tabAdultBtn.interactable = !busy;
             if (_registerBtn != null) _registerBtn.interactable = !busy;
             if (_checkBBtn != null) _checkBBtn.interactable = !busy;
             if (_confirmBtn != null) _confirmBtn.interactable = !busy;
