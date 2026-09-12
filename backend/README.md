@@ -33,14 +33,17 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/admin/students" -Headers $h
 
 ### Unity — ingreso / registro estudiante (sin password)
 
-A envía los parámetros del formulario Estudiante. B crea el perfil si el documento es nuevo, o entra si ya existe.
+| Acción | Endpoint | Obligatorios |
+|--------|----------|--------------|
+| **Ingreso** | `POST /auth/student-identify` | `nombre` + `numero_documento` (grado/sede/jornada opcionales) |
+| **Registro** | `POST /auth/student-register` | `nombre`, `numero_documento`, `grado`, `sede`, `jornada` |
 
 ```powershell
-# Registro explícito (botón Registrarse de A)
-$reg = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/student-register" -Method POST -ContentType "application/json" -Body '{"nombre":"Ana Perez","documento_numero":"1098765432","grado":"9-1","sede":"Norte","jornada":"tarde"}'
+# Ingreso (solo nombre + documento)
+$identify = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/student-identify" -Method POST -ContentType "application/json" -Body '{"nombre":"Ana Perez","numero_documento":"1098765432"}'
 
-# Ingreso (también registra si el documento aún no existe)
-$identify = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/student-identify" -Method POST -ContentType "application/json" -Body '{"nombre":"Estudiante Uno","documento_numero":"1000000001","grado":"8°","sede":"Sede Lab","jornada":"mañana"}'
+# Registro (todos obligatorios)
+$reg = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/student-register" -Method POST -ContentType "application/json" -Body '{"nombre":"Ana Perez","numero_documento":"1098765432","grado":"9-1","sede":"Norte","jornada":"tarde"}'
 
 # Por código temporal (admin regenera)
 $access = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/student-access" -Method POST -ContentType "application/json" -Body '{"access_code":"DEMO01"}'

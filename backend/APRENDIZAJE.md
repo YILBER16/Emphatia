@@ -68,7 +68,7 @@ Decisiones cerradas: [ADR-009](../documentacion/decisiones/ADR-009-perfiles-estu
 |-------|--------|
 | Solo **admin** | Crear, editar, regenerar `access_code`, desactivar |
 | **admin** y **counselor** | Listar y elegir estudiante (assume) para operar |
-| Estudiante | Sin password; entra/registra con `POST /auth/student-identify` o `POST /auth/student-register` (nombre, documento, grado, sede, jornada), o `POST /auth/student-access` (`access_code`) |
+| Estudiante | Sin password. **Ingreso** `POST /auth/student-identify` (`nombre` + `numero_documento`). **Registro** `POST /auth/student-register` (nombre, documento, grado, sede, jornada). También `POST /auth/student-access` (`access_code`) |
 
 Campos del perfil: nombres, apellidos, nombre de preferencia, grado, edad, sede, jornada, documento, teléfono y documento del acudiente, `access_code` regenerable, `is_active`.
 

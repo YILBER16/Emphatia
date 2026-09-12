@@ -107,13 +107,13 @@ class EmpathiaController extends Controller
     }
 
     /**
-     * Ingreso Unity (pestaña Estudiante): nombre, documento, grado, sede, jornada.
+     * Ingreso Unity (pestaña Estudiante): nombre + documento.
      * Si el documento ya tiene perfil activo → valida y entra.
      * Si no existe → registra un perfil nuevo (A puede dar de alta sin admin).
      */
     public function studentIdentify(Request $request, SessionEventBus $events)
     {
-        $data = $this->validateStudentSchoolFields($request);
+        $data = $this->validateStudentSchoolFields($request, requireSchoolExtras: false);
         $documento = $this->normalizeDocumento($data['documento_numero']);
 
         $profile = StudentProfile::query()
@@ -146,6 +146,19 @@ class EmpathiaController extends Controller
             return $this->issueStudentTokenResponse($profile->user->fresh(), $profile->fresh(), $events, 'student_identify');
         }
 
+        // Ingreso sin perfil previo: exige los mismos campos completos del registro.
+        foreach (['grado', 'sede', 'jornada'] as $field) {
+            if (! filled($data[$field] ?? null)) {
+                return response()->json([
+                    'error' => [
+                        'code' => 'VALIDATION_ERROR',
+                        'message' => 'Profile not found. To register send nombre, numero_documento, grado, sede and jornada (or use /auth/student-register).',
+                        'fields' => ['grado', 'sede', 'jornada'],
+                    ],
+                ], 422);
+            }
+        }
+
         $profile = $this->createStudentProfileFromSchoolFields($data, $documento, createdBy: null);
         $this->console('[B] Student identify+register profile_id='.$profile->id.' doc='.$documento);
 
@@ -153,12 +166,12 @@ class EmpathiaController extends Controller
     }
 
     /**
-     * Alta explícita desde Unity (botón Registrarse): mismos 5 campos de A.
-     * Crea perfil aislado activo y entrega token (sin password).
+     * Alta explícita desde Unity (botón Registrarse).
+     * Obligatorios: nombre, numero_documento, grado, sede, jornada.
      */
     public function studentRegister(Request $request, SessionEventBus $events)
     {
-        $data = $this->validateStudentSchoolFields($request);
+        $data = $this->validateStudentSchoolFields($request, requireSchoolExtras: true);
         $documento = $this->normalizeDocumento($data['documento_numero']);
 
         if (StudentProfile::query()->where('documento_numero', $documento)->exists()) {
@@ -734,8 +747,12 @@ class EmpathiaController extends Controller
         ]);
     }
 
-    private function validateStudentSchoolFields(Request $request): array
+    private function validateStudentSchoolFields(Request $request, bool $requireSchoolExtras): array
     {
+        // Contrato de A: nombre + numero_documento (aliases tolerados).
+        if ($request->filled('numero_documento') && ! $request->filled('documento_numero')) {
+            $request->merge(['documento_numero' => $request->input('numero_documento')]);
+        }
         if ($request->filled('documento') && ! $request->filled('documento_numero')) {
             $request->merge(['documento_numero' => $request->input('documento')]);
         }
@@ -743,13 +760,24 @@ class EmpathiaController extends Controller
             $request->merge(['nombre' => $request->input('name')]);
         }
 
-        return $request->validate([
+        $rules = [
             'nombre' => 'required|string|max:120',
             'documento_numero' => 'required|string|max:64',
-            'grado' => 'required|string|max:64',
-            'sede' => 'required|string|max:128',
-            'jornada' => 'required|string|max:64',
-        ]);
+        ];
+
+        if ($requireSchoolExtras) {
+            // Registro: todos obligatorios.
+            $rules['grado'] = 'required|string|max:64';
+            $rules['sede'] = 'required|string|max:128';
+            $rules['jornada'] = 'required|string|max:64';
+        } else {
+            // Ingreso: solo nombre + documento; el resto opcional.
+            $rules['grado'] = 'sometimes|nullable|string|max:64';
+            $rules['sede'] = 'sometimes|nullable|string|max:128';
+            $rules['jornada'] = 'sometimes|nullable|string|max:64';
+        }
+
+        return $request->validate($rules);
     }
 
     private function normalizeDocumento(string $documentoNumero): string
@@ -764,13 +792,21 @@ class EmpathiaController extends Controller
         $nombre = trim($data['nombre']);
         $originalPref = (string) $profile->getOriginal('nombre_preferencia');
 
-        $profile->fill([
+        $updates = [
             'nombre_preferencia' => $nombre,
-            'grado' => trim($data['grado']),
-            'sede' => trim($data['sede']),
-            'jornada' => trim($data['jornada']),
             'documento_numero' => $documento,
-        ]);
+        ];
+        if (! empty($data['grado'])) {
+            $updates['grado'] = trim((string) $data['grado']);
+        }
+        if (! empty($data['sede'])) {
+            $updates['sede'] = trim((string) $data['sede']);
+        }
+        if (! empty($data['jornada'])) {
+            $updates['jornada'] = trim((string) $data['jornada']);
+        }
+
+        $profile->fill($updates);
         if (trim((string) $profile->nombres) === ''
             || $this->normalizeKey((string) $profile->nombres) === $this->normalizeKey($originalPref)) {
             $profile->nombres = $nombre;
@@ -786,6 +822,9 @@ class EmpathiaController extends Controller
     private function createStudentProfileFromSchoolFields(array $data, string $documento, ?int $createdBy): StudentProfile
     {
         $nombre = trim($data['nombre']);
+        $grado = trim((string) ($data['grado'] ?? '')) ?: 'pendiente';
+        $sede = trim((string) ($data['sede'] ?? '')) ?: 'pendiente';
+        $jornada = trim((string) ($data['jornada'] ?? '')) ?: 'pendiente';
         $accessCode = $this->generateUniqueAccessCode();
         $emailLocal = 'stu.'.Str::lower(preg_replace('/[^A-Za-z0-9]/', '', $documento)).'.'.Str::lower(Str::random(4));
         $username = 'stu_'.Str::lower(preg_replace('/[^A-Za-z0-9]/', '', $documento));
@@ -793,7 +832,7 @@ class EmpathiaController extends Controller
             $username .= '_'.Str::lower(Str::random(4));
         }
 
-        return DB::transaction(function () use ($data, $documento, $createdBy, $nombre, $accessCode, $emailLocal, $username) {
+        return DB::transaction(function () use ($documento, $createdBy, $nombre, $grado, $sede, $jornada, $accessCode, $emailLocal, $username) {
             $user = User::query()->create([
                 'username' => $username,
                 'name' => $nombre,
@@ -808,10 +847,10 @@ class EmpathiaController extends Controller
                 'nombres' => $nombre,
                 'apellidos' => '-',
                 'nombre_preferencia' => $nombre,
-                'grado' => trim($data['grado']),
+                'grado' => $grado,
                 'edad' => 12,
-                'sede' => trim($data['sede']),
-                'jornada' => trim($data['jornada']),
+                'sede' => $sede,
+                'jornada' => $jornada,
                 'documento_numero' => $documento,
                 'acudiente_telefono' => 'pendiente',
                 'acudiente_documento' => 'pendiente',
