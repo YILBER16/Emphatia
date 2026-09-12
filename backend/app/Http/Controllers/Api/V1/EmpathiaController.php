@@ -82,8 +82,11 @@ class EmpathiaController extends Controller
             ], 401);
         }
 
-        $closed = $this->abortActiveSessions($events, 'login_refresh');
-        $this->console('[B] Login '.$user->username.' — sesiones activas cerradas: '.$closed);
+        // Solo cierra sesiones de ESE estudiante; no toca las de otros perfiles.
+        $closed = $user->role === 'student'
+            ? $this->abortActiveSessionsForStudent($events, (int) $user->id, 'login_refresh')
+            : 0;
+        $this->console('[B] Login '.$user->username.' — sesiones propias cerradas: '.$closed);
 
         $plain = Str::random(48);
         ApiToken::query()->create([
@@ -100,6 +103,105 @@ class EmpathiaController extends Controller
             'user' => $this->userPayload($user),
             'closed_active_sessions' => $closed,
         ]);
+    }
+
+    /**
+     * Ingreso Unity (pestaña Estudiante): nombre, documento, grado, sede, jornada.
+     * Busca el perfil activo creado/activado por admin, actualiza esos campos y emite token.
+     */
+    public function studentIdentify(Request $request, SessionEventBus $events)
+    {
+        if ($request->filled('documento') && ! $request->filled('documento_numero')) {
+            $request->merge(['documento_numero' => $request->input('documento')]);
+        }
+        if ($request->filled('name') && ! $request->filled('nombre')) {
+            $request->merge(['nombre' => $request->input('name')]);
+        }
+
+        $data = $request->validate([
+            'nombre' => 'required|string|max:120',
+            'documento_numero' => 'required|string|max:64',
+            'grado' => 'required|string|max:64',
+            'sede' => 'required|string|max:128',
+            'jornada' => 'required|string|max:64',
+        ]);
+
+        $documento = preg_replace('/\D+/', '', $data['documento_numero']) ?: trim($data['documento_numero']);
+        // Match exacto por documento (único). Nunca mezcla con otro perfil.
+        $profile = StudentProfile::query()
+            ->with('user')
+            ->where('is_active', true)
+            ->where('documento_numero', $documento)
+            ->first();
+
+        if (! $profile || ! $profile->user || $profile->user->role !== 'student') {
+            return response()->json([
+                'error' => [
+                    'code' => 'INVALID_STUDENT_IDENTITY',
+                    'message' => 'No active student profile matches documento_numero',
+                ],
+            ], 401);
+        }
+
+        if (! $this->studentIdentityMatches($profile, $data)) {
+            return response()->json([
+                'error' => [
+                    'code' => 'INVALID_STUDENT_IDENTITY',
+                    'message' => 'nombre does not match the active profile for this documento',
+                ],
+            ], 401);
+        }
+
+        // Actualiza SOLO este profile_id (fila aislada).
+        $nombre = trim($data['nombre']);
+        $profile->fill([
+            'nombre_preferencia' => $nombre,
+            'grado' => trim($data['grado']),
+            'sede' => trim($data['sede']),
+            'jornada' => trim($data['jornada']),
+            'documento_numero' => $documento,
+        ]);
+        if (trim((string) $profile->nombres) === ''
+            || $this->normalizeKey((string) $profile->nombres) === $this->normalizeKey((string) $profile->getOriginal('nombre_preferencia'))) {
+            $profile->nombres = $nombre;
+        }
+        $profile->save();
+
+        $student = $profile->user;
+        $student->display_name = $nombre;
+        $student->name = trim($profile->nombres.' '.$profile->apellidos) ?: $nombre;
+        $student->save();
+
+        $this->console('[B] Student identify profile_id='.$profile->id.' doc='.$profile->documento_numero.' nombre='.$nombre);
+
+        return $this->issueStudentTokenResponse($student, $profile, $events, 'student_identify');
+    }
+
+    /**
+     * Ingreso alternativo con código temporal regenerado por el admin.
+     */
+    public function studentAccess(Request $request, SessionEventBus $events)
+    {
+        $data = $request->validate([
+            'access_code' => 'required|string|max:32',
+        ]);
+
+        $code = strtoupper(trim($data['access_code']));
+        $profile = StudentProfile::query()
+            ->with('user')
+            ->where('is_active', true)
+            ->whereRaw('UPPER(access_code) = ?', [$code])
+            ->first();
+
+        if (! $profile || ! $profile->user || $profile->user->role !== 'student') {
+            return response()->json([
+                'error' => ['code' => 'INVALID_ACCESS_CODE', 'message' => 'Invalid or inactive access code'],
+            ], 401);
+        }
+
+        $this->console('[B] Student access_code ok profile='.$profile->id);
+
+        return $this->issueStudentTokenResponse($profile->user, $profile, $events, 'student_access');
     }
 
     public function logout(Request $request)
@@ -132,21 +234,29 @@ class EmpathiaController extends Controller
             'client' => 'sometimes|in:unity',
         ]);
 
-        $studentId = $user->role === 'admin'
-            ? User::query()->where('role', 'student')->value('id')
-            : $user->id;
-
-        if (empty($studentId)) {
-            return response()->json([
-                'error' => [
-                    'code' => 'VALIDATION_ERROR',
-                    'message' => 'No student user available to attach the session',
-                ],
-            ], 422);
+        if ($user->role === 'admin') {
+            $studentId = $request->integer('student_user_id') ?: null;
+            if (! $studentId) {
+                return response()->json([
+                    'error' => [
+                        'code' => 'VALIDATION_ERROR',
+                        'message' => 'Admin must pass student_user_id, or use assume / student-identify first',
+                    ],
+                ], 422);
+            }
+            $target = User::query()->where('id', $studentId)->where('role', 'student')->first();
+            if (! $target) {
+                return response()->json([
+                    'error' => ['code' => 'NOT_FOUND', 'message' => 'student_user_id is not a student'],
+                ], 404);
+            }
+        } else {
+            $studentId = $user->id;
         }
 
         try {
-            $this->abortActiveSessions($events, 'replaced_on_create');
+            // Solo cierra sesiones previas de ESTE estudiante (no las de otros perfiles).
+            $this->abortActiveSessionsForStudent($events, (int) $studentId, 'replaced_on_create');
 
             $session = AccompanimentSession::query()->create([
                 'id' => (string) Str::uuid(),
@@ -197,12 +307,16 @@ class EmpathiaController extends Controller
 
     public function getActiveSession(Request $request)
     {
-        $active = AccompanimentSession::query()->where('status', 'active')->first();
-        if (!$active) {
+        $user = $request->user();
+        $q = AccompanimentSession::query()->where('status', 'active')->orderByDesc('started_at');
+        if ($user->role === 'student') {
+            $q->where('student_user_id', $user->id);
+        }
+        $active = $q->first();
+        if (! $active) {
             return response()->json(['session' => null]);
         }
 
-        // Lab: cualquier usuario autenticado puede leer el id activo (desbloquea a A).
         return response()->json([
             'session' => [
                 'id' => $active->id,
@@ -214,8 +328,13 @@ class EmpathiaController extends Controller
 
     public function closeActiveSession(Request $request, SessionEventBus $events)
     {
-        $active = AccompanimentSession::query()->where('status', 'active')->first();
-        if (!$active) {
+        $user = $request->user();
+        $q = AccompanimentSession::query()->where('status', 'active')->orderByDesc('started_at');
+        if ($user->role === 'student') {
+            $q->where('student_user_id', $user->id);
+        }
+        $active = $q->first();
+        if (! $active) {
             return response()->json(['ok' => true, 'closed' => false, 'message' => 'No active session']);
         }
 
@@ -538,6 +657,7 @@ class EmpathiaController extends Controller
                 'edad' => $profile->edad,
                 'sede' => $profile->sede,
                 'jornada' => $profile->jornada,
+                'documento_numero' => $profile->documento_numero,
                 'role' => 'student',
             ]);
 
@@ -567,8 +687,26 @@ class EmpathiaController extends Controller
             ], 422);
         }
 
-        $closed = $this->abortActiveSessionsForStudent($events, (int) $student->id, 'assume_student');
-        $this->console('[B] Assume student='.$student->id.' by '.$actor->username.' — sesiones cerradas: '.$closed);
+        $this->console('[B] Assume student='.$student->id.' by '.$actor->username);
+
+        $payload = $this->issueStudentTokenResponse($student, $profile, $events, 'assume_student');
+        $data = $payload->getData(true);
+        $data['assumed_by'] = [
+            'id' => (string) $actor->id,
+            'username' => $actor->username,
+            'role' => $actor->role,
+        ];
+
+        return response()->json($data);
+    }
+
+    private function issueStudentTokenResponse(
+        User $student,
+        StudentProfile $profile,
+        SessionEventBus $events,
+        string $reason
+    ) {
+        $closed = $this->abortActiveSessionsForStudent($events, (int) $student->id, $reason);
 
         $plain = Str::random(48);
         ApiToken::query()->create([
@@ -582,21 +720,52 @@ class EmpathiaController extends Controller
             'token' => $plain,
             'token_type' => 'Bearer',
             'expires_at' => now()->addDays(7)->utc()->toIso8601String(),
-            'user' => $this->userPayload($student),
+            'user' => $this->userPayload($student->fresh()),
             'profile' => [
                 'profile_id' => $profile->id,
+                'user_id' => (string) $profile->user_id,
                 'nombre_preferencia' => $profile->nombre_preferencia,
+                'nombre' => $profile->nombre_preferencia,
                 'grado' => $profile->grado,
                 'sede' => $profile->sede,
                 'jornada' => $profile->jornada,
-            ],
-            'assumed_by' => [
-                'id' => (string) $actor->id,
-                'username' => $actor->username,
-                'role' => $actor->role,
+                'documento_numero' => $profile->documento_numero,
             ],
             'closed_active_sessions' => $closed,
         ]);
+    }
+
+    private function studentIdentityMatches(StudentProfile $profile, array $data): bool
+    {
+        // Documento ya aisló la fila. Nombre: igualdad normalizada (evita cruzar perfiles).
+        $nombreIn = $this->normalizeKey($data['nombre']);
+        if ($nombreIn === '') {
+            return false;
+        }
+
+        $full = $this->normalizeKey(trim($profile->nombres.' '.$profile->apellidos));
+        $pref = $this->normalizeKey($profile->nombre_preferencia);
+        $nombresOnly = $this->normalizeKey((string) $profile->nombres);
+
+        return $nombreIn === $pref
+            || $nombreIn === $full
+            || ($nombresOnly !== '' && $nombreIn === $nombresOnly);
+    }
+
+    private function normalizeKey(string $value): string
+    {
+        $v = mb_strtolower(trim($value), 'UTF-8');
+        $map = [
+            'á' => 'a', 'à' => 'a', 'ä' => 'a', 'â' => 'a',
+            'é' => 'e', 'è' => 'e', 'ë' => 'e', 'ê' => 'e',
+            'í' => 'i', 'ì' => 'i', 'ï' => 'i', 'î' => 'i',
+            'ó' => 'o', 'ò' => 'o', 'ö' => 'o', 'ô' => 'o',
+            'ú' => 'u', 'ù' => 'u', 'ü' => 'u', 'û' => 'u',
+            'ñ' => 'n', '°' => '',
+        ];
+        $v = strtr($v, $map);
+
+        return preg_replace('/\s+/', ' ', $v) ?? '';
     }
 
     private function console(string $message): void
@@ -609,10 +778,15 @@ class EmpathiaController extends Controller
     private function resolveSession(string $sessionId): AccompanimentSession
     {
         if ($sessionId === 'active') {
-            $session = AccompanimentSession::query()
+            $user = request()->user();
+            $q = AccompanimentSession::query()
                 ->where('status', 'active')
-                ->orderByDesc('started_at')
-                ->first();
+                ->orderByDesc('started_at');
+            // Estudiante solo ve SU sesión activa (no la de otro perfil).
+            if ($user && $user->role === 'student') {
+                $q->where('student_user_id', $user->id);
+            }
+            $session = $q->first();
             if (! $session) {
                 abort(response()->json([
                     'error' => ['code' => 'NOT_FOUND', 'message' => 'No active session'],

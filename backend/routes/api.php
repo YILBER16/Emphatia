@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Route;
 Route::get('/health', [EmpathiaController::class, 'health']);
 
 Route::post('/auth/login', [EmpathiaController::class, 'login']);
+Route::post('/auth/student-identify', [EmpathiaController::class, 'studentIdentify']);
+Route::post('/auth/student-access', [EmpathiaController::class, 'studentAccess']);
 
 Route::middleware(AuthenticateApiToken::class)->group(function () {
     Route::post('/auth/logout', [EmpathiaController::class, 'logout']);

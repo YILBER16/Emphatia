@@ -44,6 +44,29 @@ class AdminStudentController extends Controller
         $admin = $request->user();
         $this->assertAdmin($admin);
 
+        // Alias que usa A / formularios simples.
+        if ($request->filled('documento') && ! $request->filled('documento_numero')) {
+            $request->merge(['documento_numero' => $request->input('documento')]);
+        }
+        if ($request->filled('nombre') && ! $request->filled('nombre_preferencia')) {
+            $request->merge(['nombre_preferencia' => $request->input('nombre')]);
+        }
+        if ($request->filled('nombre') && ! $request->filled('nombres')) {
+            $request->merge(['nombres' => $request->input('nombre')]);
+        }
+        if (! $request->filled('apellidos')) {
+            $request->merge(['apellidos' => '-']);
+        }
+        if (! $request->filled('edad')) {
+            $request->merge(['edad' => 12]);
+        }
+        if (! $request->filled('acudiente_telefono')) {
+            $request->merge(['acudiente_telefono' => 'pendiente']);
+        }
+        if (! $request->filled('acudiente_documento')) {
+            $request->merge(['acudiente_documento' => 'pendiente']);
+        }
+
         $data = $request->validate([
             'nombres' => 'required|string|max:120',
             'apellidos' => 'required|string|max:120',
@@ -55,7 +78,11 @@ class AdminStudentController extends Controller
             'documento_numero' => 'required|string|max:64',
             'acudiente_telefono' => 'required|string|max:64',
             'acudiente_documento' => 'required|string|max:64',
+            'is_active' => 'sometimes|boolean',
         ]);
+
+        $documento = preg_replace('/\D+/', '', $data['documento_numero']) ?: trim($data['documento_numero']);
+        $data['documento_numero'] = $documento;
 
         $existsDoc = StudentProfile::query()->where('documento_numero', $data['documento_numero'])->exists();
         if ($existsDoc) {
@@ -67,6 +94,9 @@ class AdminStudentController extends Controller
         $accessCode = $this->generateUniqueAccessCode();
         $displayName = trim($data['nombre_preferencia']);
         $fullName = trim($data['nombres'].' '.$data['apellidos']);
+        if (str_ends_with($fullName, ' -')) {
+            $fullName = trim($data['nombres']);
+        }
         $emailLocal = 'stu.'.Str::lower(preg_replace('/[^A-Za-z0-9]/', '', $data['documento_numero'])).'.'.Str::lower(Str::random(4));
         $username = 'stu_'.Str::lower(preg_replace('/[^A-Za-z0-9]/', '', $data['documento_numero']));
         if (User::query()->where('username', $username)->exists()) {
@@ -74,9 +104,10 @@ class AdminStudentController extends Controller
         }
 
         $profile = DB::transaction(function () use ($data, $admin, $accessCode, $displayName, $fullName, $emailLocal, $username) {
+            // Siempre User + StudentProfile NUEVOS (1:1). Nunca reutiliza ni mezcla otro perfil.
             $user = User::query()->create([
                 'username' => $username,
-                'name' => $fullName,
+                'name' => $fullName !== '' ? $fullName : $displayName,
                 'display_name' => $displayName,
                 'email' => $emailLocal.'@empathia.local',
                 'password' => null,
@@ -96,7 +127,7 @@ class AdminStudentController extends Controller
                 'acudiente_telefono' => $data['acudiente_telefono'],
                 'acudiente_documento' => $data['acudiente_documento'],
                 'access_code' => $accessCode,
-                'is_active' => true,
+                'is_active' => array_key_exists('is_active', $data) ? (bool) $data['is_active'] : true,
                 'created_by' => $admin->id,
             ]);
         });
@@ -105,7 +136,7 @@ class AdminStudentController extends Controller
 
         return response()->json([
             'data' => $this->profilePayload($profile, includeAccessCode: true),
-            'message' => 'Student profile created. Save access_code now; it will not be shown again on GET.',
+            'message' => 'Student profile created as an isolated record (own user_id + profile_id). Save access_code now.',
         ], 201);
     }
 
@@ -116,6 +147,13 @@ class AdminStudentController extends Controller
         $profile = StudentProfile::query()->with(['user', 'creator'])->find($id);
         if (! $profile) {
             return response()->json(['error' => ['code' => 'NOT_FOUND', 'message' => 'Student profile not found']], 404);
+        }
+
+        if ($request->filled('documento') && ! $request->filled('documento_numero')) {
+            $request->merge(['documento_numero' => $request->input('documento')]);
+        }
+        if ($request->filled('nombre') && ! $request->filled('nombre_preferencia')) {
+            $request->merge(['nombre_preferencia' => $request->input('nombre')]);
         }
 
         $data = $request->validate([
@@ -136,6 +174,10 @@ class AdminStudentController extends Controller
             'acudiente_documento' => 'sometimes|string|max:64',
             'is_active' => 'sometimes|boolean',
         ]);
+
+        if (isset($data['documento_numero'])) {
+            $data['documento_numero'] = preg_replace('/\D+/', '', $data['documento_numero']) ?: trim($data['documento_numero']);
+        }
 
         if ($data === []) {
             return response()->json([

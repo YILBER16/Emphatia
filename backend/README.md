@@ -21,7 +21,8 @@ $login = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/login" -Metho
 $h = @{ Authorization = "Bearer $($login.token)"; "Content-Type" = "application/json" }
 
 # Crear perfil (guarda access_code de la respuesta)
-$body = '{"nombres":"Ana","apellidos":"Perez","nombre_preferencia":"Anita","grado":"9-1","edad":15,"sede":"Norte","jornada":"tarde","documento_numero":"1098765432","acudiente_telefono":"3101112233","acudiente_documento":"52123456"}'
+# Campos completos o alias cortos de A: nombre, documento, grado, sede, jornada
+$body = '{"nombre":"Ana Perez","documento":"1098765432","grado":"9-1","sede":"Norte","jornada":"tarde"}'
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/admin/students" -Method POST -Headers $h -Body $body
 
 # Listar / regenerar / desactivar
@@ -29,6 +30,21 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/admin/students" -Headers $h
 # POST .../admin/students/{id}/regenerate-code
 # POST .../admin/students/{id}/deactivate
 ```
+
+### Unity — ingreso estudiante (sin password)
+
+A envía los parámetros del formulario Estudiante. B busca el perfil **activo** por documento, refresca nombre/grado/sede/jornada y entrega token (misma forma que assume).
+
+```powershell
+# Por identidad (pestaña Estudiante de A)
+$identify = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/student-identify" -Method POST -ContentType "application/json" -Body '{"nombre":"Estudiante Uno","documento_numero":"1000000001","grado":"8°","sede":"Sede Lab","jornada":"mañana"}'
+# $identify.token · $identify.profile
+
+# Por código temporal (admin regenera)
+$access = Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/v1/auth/student-access" -Method POST -ContentType "application/json" -Body '{"access_code":"DEMO01"}'
+```
+
+Errores: `INVALID_STUDENT_IDENTITY` · `INVALID_ACCESS_CODE`.
 
 ADR: `documentacion/decisiones/ADR-009-perfiles-estudiante-sin-password.md`.
 
