@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -19,6 +20,11 @@ namespace Empathia
         const int MicSampleRate = 16000;
         const float RefW = 1920f;
         const float RefH = 1080f;
+        const float LoginCardW = 760f;
+        const float LoginCardTop = 0.74f;
+        const float LoginCardBottom = 0.03f;
+        const float LoginFieldH = 70f;
+        const float LoginDropItemH = 64f;
 
         static readonly Color Navy = new Color(0.12f, 0.14f, 0.22f, 1f);
         static readonly Color Muted = new Color(0.42f, 0.45f, 0.55f, 1f);
@@ -51,6 +57,7 @@ namespace Empathia
 
         RectTransform _rootRt;
         RectTransform _cardRt;
+        RectTransform _bgRt;
         RectTransform _labRt;
         RectTransform _confirmRt;
         RectTransform _healthRt;
@@ -69,21 +76,27 @@ namespace Empathia
         TMP_InputField _pass;
         TMP_InputField _studentName;
         TMP_InputField _studentDoc;
-        TMP_InputField _studentGrade;
-        TMP_InputField _studentCampus;
-        TMP_InputField _studentShift;
+        TMP_InputField _regName;
+        TMP_InputField _regDoc;
+        TMP_Dropdown _regCampus;
+        TMP_Dropdown _regGrade;
+        TMP_Dropdown _regShift;
         GameObject _studentLoginPanel;
+        GameObject _registerPanel;
         GameObject _adultLoginPanel;
         Button _studentLoginBtn;
-        Button _tabStudentBtn;
-        Button _tabAdultBtn;
-        bool _studentTab = true;
+        Button _createStudentBtn;
+        Button _backToLoginBtn;
         TMP_InputField _typedMessage;
         TextMeshProUGUI _status;
         TextMeshProUGUI _state;
         TextMeshProUGUI _reply;
         TextMeshProUGUI _transcript;
         TextMeshProUGUI _loginStatus;
+        GameObject _alertModal;
+        TextMeshProUGUI _alertTitle;
+        TextMeshProUGUI _alertBody;
+        Button _alertCloseBtn;
         TextMeshProUGUI _welcomeTitle;
         TextMeshProUGUI _welcomeSub;
         Button _loginBtn;
@@ -313,6 +326,17 @@ namespace Empathia
                 }
                 Disc(32, 20, 3, clear);
             }
+            else if (kind == "down")
+            {
+                for (var y = 18; y <= 42; y++)
+                for (var x = 12; x <= 52; x++)
+                {
+                    var t = (y - 18) / 24f;
+                    var half = 4f + t * 16f;
+                    if (Mathf.Abs(x - 32) <= half)
+                        pixels[y * s + x] = ink;
+                }
+            }
             else // eye
             {
                 for (var y = 0; y < s; y++)
@@ -362,32 +386,21 @@ namespace Empathia
 
             _rootRt = canvasGo.GetComponent<RectTransform>();
 
-            // Fondo mockup 16:9 (cover)
-            var bgGo = new GameObject("Background", typeof(RectTransform), typeof(RawImage), typeof(AspectRatioFitter));
+            // Fondo completo en 1920×1080 (sin recortar el logo de arriba)
+            var bgGo = new GameObject("Background", typeof(RectTransform), typeof(RawImage));
             bgGo.transform.SetParent(canvasGo.transform, false);
-            var bgRt = bgGo.GetComponent<RectTransform>();
-            StretchFull(bgRt);
+            _bgRt = bgGo.GetComponent<RectTransform>();
             var raw = bgGo.GetComponent<RawImage>();
             var tex = Resources.Load<Texture2D>("Empathia/LoginBackground");
-            if (tex != null)
-            {
-                raw.texture = tex;
-                raw.color = Color.white;
-                var ar = bgGo.GetComponent<AspectRatioFitter>();
-                ar.aspectMode = AspectRatioFitter.AspectMode.EnvelopeParent;
-                ar.aspectRatio = tex.width / (float)Mathf.Max(1, tex.height);
-            }
-            else
-            {
-                raw.texture = BuildFallbackGradient(64, 36);
-                raw.color = Color.white;
-                bgGo.GetComponent<AspectRatioFitter>().aspectMode = AspectRatioFitter.AspectMode.None;
-            }
+            raw.texture = tex != null ? tex : BuildFallbackGradient(64, 36);
+            raw.color = Color.white;
+            PlaceBackground();
 
             BuildLoginView(canvasGo.transform);
             BuildPickStudentView(canvasGo.transform);
             BuildConfirmView(canvasGo.transform);
             BuildHealthView(canvasGo.transform);
+            BuildAlertModal(canvasGo.transform);
             ShowScreen(UiScreen.Login);
         }
 
@@ -400,26 +413,20 @@ namespace Empathia
             var shadow = CreateImage(_loginView.transform, "CardShadow", new Color(0.25f, 0.2f, 0.45f, 0.18f));
             ApplyRounded(shadow, RoundSprite(256, 48), 1.0f);
             _cardShadowGo = shadow.gameObject;
-            var shadowRt = shadow.rectTransform;
-            shadowRt.anchorMin = shadowRt.anchorMax = shadowRt.pivot = new Vector2(0.5f, 0.42f);
-            shadowRt.sizeDelta = new Vector2(530, 690);
-            shadowRt.anchoredPosition = new Vector2(0, -6);
 
             var card = CreateImage(_loginView.transform, "Card", CardGlass);
             ApplyRounded(card, RoundSprite(256, 48), 1.05f);
             _cardRt = card.rectTransform;
-            _cardRt.anchorMin = _cardRt.anchorMax = _cardRt.pivot = new Vector2(0.5f, 0.46f);
-            _cardRt.sizeDelta = new Vector2(520, 700);
-            _cardRt.anchoredPosition = Vector2.zero;
+            PlaceLoginCard();
 
             var content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup));
             content.transform.SetParent(_cardRt, false);
             var contentRt = content.GetComponent<RectTransform>();
             StretchFull(contentRt);
-            contentRt.offsetMin = new Vector2(36, 24);
-            contentRt.offsetMax = new Vector2(-36, -24);
+            contentRt.offsetMin = new Vector2(44, 28);
+            contentRt.offsetMax = new Vector2(-44, -28);
             var v = content.GetComponent<VerticalLayoutGroup>();
-            v.spacing = 12;
+            v.spacing = 16;
             v.childAlignment = TextAnchor.UpperCenter;
             v.childControlWidth = true;
             v.childControlHeight = true;
@@ -429,17 +436,35 @@ namespace Empathia
 
             _baseUrl = AddCompactInput(content.transform, "Servidor", EmpathiaAuthState.BaseUrl);
 
-            var tabs = AddRow(content.transform, 44);
-            _tabStudentBtn = AddGradientButton(tabs, "Estudiante", 44, () => ShowLoginTab(true), 16f);
-            _tabAdultBtn = AddOutlineButton(tabs, "Adulto", 44, () => ShowLoginTab(false));
-
             _studentLoginPanel = CreateLoginPanel(content.transform, "StudentFields");
-            _studentName = AddIconInput(_studentLoginPanel.transform, "Nombre", "Estudiante Uno", "user", false);
             _studentDoc = AddIconInput(_studentLoginPanel.transform, "Número de documento", "1000000001", "lock", false);
-            _studentGrade = AddIconInput(_studentLoginPanel.transform, "Grado", "8°", "user", false);
-            _studentCampus = AddIconInput(_studentLoginPanel.transform, "Sede", "Sede Lab", "user", false);
-            _studentShift = AddIconInput(_studentLoginPanel.transform, "Jornada (mañana / tarde)", "mañana", "user", false);
-            _studentLoginBtn = AddGradientButton(_studentLoginPanel.transform, "Ingresar", 58, OnStudentLogin);
+            _studentName = AddIconInput(_studentLoginPanel.transform, "Nombre y apellido", "Estudiante Uno", "user", false);
+            _studentLoginBtn = AddGradientButton(_studentLoginPanel.transform, "Ingresar", 72, OnStudentLogin, 24f);
+
+            _registerPanel = CreateLoginPanel(content.transform, "RegisterFields");
+            _regDoc = AddIconInput(_registerPanel.transform, "Número de documento", "", "lock", false);
+            _regName = AddIconInput(_registerPanel.transform, "Nombre y apellido", "", "user", false);
+            _regCampus = AddOptionDropdown(
+                _registerPanel.transform,
+                "Sede registro",
+                "Sede Principal",
+                "Sede Jhon F. kennedy",
+                "Sede Gustavo Rojas Pinilla",
+                "Sede Villa Paraguay");
+            _regGrade = AddOptionDropdown(
+                _registerPanel.transform,
+                "Grado registro",
+                GradesForCampus("Sede Principal"));
+            _regCampus.onValueChanged.AddListener(_ => RefreshRegisterGrades());
+            RefreshRegisterGrades();
+            _regShift = AddOptionDropdown(
+                _registerPanel.transform,
+                "Jornada registro",
+                "mañana",
+                "tarde");
+            _createStudentBtn = AddGradientButton(_registerPanel.transform, "Crear perfil", 64, OnCreateStudent, 22f);
+            _backToLoginBtn = AddOutlineButton(_registerPanel.transform, "Volver", 54, () => ShowRegisterForm(false));
+            _registerPanel.SetActive(false);
 
             _adultLoginPanel = CreateLoginPanel(content.transform, "AdultFields");
             _user = AddIconInput(_adultLoginPanel.transform, "Adulto (admin1 / orientador1)", "orientador1", "user", false);
@@ -447,10 +472,12 @@ namespace Empathia
             _checkBBtn = AddOutlineButton(_adultLoginPanel.transform, "Probar conexión B", 48, OnCheckConnectionB);
             _loginBtn = AddGradientButton(_adultLoginPanel.transform, "Iniciar sesión", 58, OnLogin);
 
-            _registerBtn = AddOutlineButton(content.transform, "Registrarse", 50, OnRegister);
-            AddLabel(content.transform, "Estudiante: nombre, documento, grado, sede y jornada.", 13, FontStyles.Normal, Muted, 20, TextAlignmentOptions.Center);
-            _loginStatus = AddLabel(content.transform, "", 12, FontStyles.Normal, new Color(0.75f, 0.25f, 0.35f), 36, TextAlignmentOptions.Center);
-            ShowLoginTab(true);
+            _registerBtn = AddOutlineButton(content.transform, "Registrarse", 62, OnRegister);
+            AddLabel(content.transform, "Si ya estás registrado, ingresa documento y nombre.", 16, FontStyles.Normal, Muted, 28, TextAlignmentOptions.Center);
+            _loginStatus = AddLabel(content.transform, "", 14, FontStyles.Normal, Muted, 24, TextAlignmentOptions.Center);
+            if (_adultLoginPanel != null)
+                _adultLoginPanel.SetActive(false);
+            SetLoginStatus("Escribe tus datos escolares y pulsa Ingresar.");
         }
 
         GameObject CreateLoginPanel(Transform parent, string name)
@@ -458,7 +485,7 @@ namespace Empathia
             var go = new GameObject(name, typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
             go.transform.SetParent(parent, false);
             var v = go.GetComponent<VerticalLayoutGroup>();
-            v.spacing = 10;
+            v.spacing = 14;
             v.childAlignment = TextAnchor.UpperCenter;
             v.childControlWidth = true;
             v.childControlHeight = true;
@@ -470,53 +497,162 @@ namespace Empathia
             return go;
         }
 
-        void ShowLoginTab(bool student)
-        {
-            _studentTab = student;
-            if (_studentLoginPanel != null)
-                _studentLoginPanel.SetActive(student);
-            if (_adultLoginPanel != null)
-                _adultLoginPanel.SetActive(!student);
-            ApplyLayout();
-            SetLoginStatus(student
-                ? "Escribe tus datos escolares y pulsa Ingresar."
-                : "Adulto: entra y luego elige un estudiante.");
-        }
-
         void OnRegister()
         {
-            SetLoginStatus("Los perfiles los crea el admin en B. El estudiante no se registra aquí.");
+            ShowRegisterForm(true);
+        }
+
+        void ShowRegisterForm(bool register)
+        {
+            if (_studentLoginPanel != null)
+                _studentLoginPanel.SetActive(!register);
+            if (_registerPanel != null)
+                _registerPanel.SetActive(register);
+            if (_registerBtn != null)
+                _registerBtn.gameObject.SetActive(!register);
+            SetLoginStatus(register
+                ? "Completa tus datos para crear el perfil."
+                : "Escribe tus datos escolares y pulsa Ingresar.");
+        }
+
+        void RefreshRegisterGrades()
+        {
+            if (_regGrade == null)
+                return;
+            SetDropdownOptions(_regGrade, GradesForCampus(SelectedOption(_regCampus)), SelectedOption(_regGrade));
+        }
+
+        static void SplitNombreApellido(string fullName, out string nombres, out string apellidos)
+        {
+            var text = (fullName ?? "").Trim();
+            var split = text.LastIndexOf(' ');
+            if (split <= 0)
+            {
+                nombres = text;
+                apellidos = text;
+                return;
+            }
+
+            nombres = text.Substring(0, split).Trim();
+            apellidos = text.Substring(split + 1).Trim();
+            if (string.IsNullOrWhiteSpace(nombres))
+                nombres = text;
+            if (string.IsNullOrWhiteSpace(apellidos))
+                apellidos = text;
+        }
+
+        static int EdadForGrade(string grado)
+        {
+            switch (grado)
+            {
+                case "Jardín":
+                    return 5;
+                case "Transición":
+                    return 6;
+                case "1°":
+                    return 7;
+                case "2°":
+                    return 8;
+                case "3°":
+                    return 9;
+                case "4°":
+                    return 10;
+                case "5°":
+                    return 11;
+                case "6°":
+                    return 12;
+                case "7°":
+                    return 13;
+                case "8°":
+                    return 14;
+                case "9°":
+                    return 15;
+                case "10°":
+                    return 16;
+                case "11°":
+                    return 17;
+                default:
+                    return 13;
+            }
+        }
+
+        void OnCreateStudent()
+        {
+            if (_busy) return;
+            EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
+                ? "http://192.168.1.31:8000/api/v1"
+                : _baseUrl.text.Trim();
+
+            var documento = _regDoc != null ? _regDoc.text.Trim() : "";
+            var nombreCompleto = _regName != null ? _regName.text.Trim() : "";
+            var sede = SelectedOption(_regCampus);
+            var grado = SelectedOption(_regGrade);
+            var jornada = SelectedOption(_regShift);
+
+            if (string.IsNullOrWhiteSpace(documento) || string.IsNullOrWhiteSpace(nombreCompleto)
+                || string.IsNullOrWhiteSpace(sede) || string.IsNullOrWhiteSpace(grado)
+                || string.IsNullOrWhiteSpace(jornada))
+            {
+                ShowAlertModal("Datos incompletos", "Completa documento, nombre y apellido, sede, grado y jornada.");
+                return;
+            }
+
+            SplitNombreApellido(nombreCompleto, out var nombres, out var apellidos);
+
+            SetBusy(true);
+            SetLoginStatus("Registrando estudiante…");
+            StartCoroutine(_api.RegisterStudent(
+                nombres,
+                apellidos,
+                documento,
+                grado,
+                sede,
+                jornada,
+                EdadForGrade(grado),
+                "0000000000",
+                "pendiente",
+                (ok, msg) =>
+                {
+                    SetBusy(false);
+                    if (!ok)
+                    {
+                        ShowAlertModal("No se pudo registrar", msg);
+                        return;
+                    }
+
+                    if (_studentDoc != null)
+                        _studentDoc.text = documento;
+                    if (_studentName != null)
+                        _studentName.text = nombreCompleto;
+                    ShowRegisterForm(false);
+                    ShowAlertModal("Registro listo", msg);
+                }));
         }
 
         void OnStudentLogin()
         {
             if (_busy) return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://127.0.0.1:8000/api/v1"
+                ? "http://192.168.1.31:8000/api/v1"
                 : _baseUrl.text.Trim();
 
             var nombre = _studentName != null ? _studentName.text.Trim() : "";
             var documento = _studentDoc != null ? _studentDoc.text.Trim() : "";
-            var grado = _studentGrade != null ? _studentGrade.text.Trim() : "";
-            var sede = _studentCampus != null ? _studentCampus.text.Trim() : "";
-            var jornada = _studentShift != null ? _studentShift.text.Trim() : "";
 
-            if (string.IsNullOrWhiteSpace(nombre) || string.IsNullOrWhiteSpace(documento)
-                || string.IsNullOrWhiteSpace(grado) || string.IsNullOrWhiteSpace(sede)
-                || string.IsNullOrWhiteSpace(jornada))
+            if (string.IsNullOrWhiteSpace(nombre) || string.IsNullOrWhiteSpace(documento))
             {
-                SetLoginStatus("Completa nombre, documento, grado, sede y jornada.");
+                ShowAlertModal("Datos incompletos", "Completa número de documento y nombre.");
                 return;
             }
 
             SetBusy(true);
-            SetLoginStatus("Ingresando con tus datos escolares…");
-            StartCoroutine(_api.IdentifyStudent(nombre, documento, grado, sede, jornada, (ok, msg) =>
+            SetLoginStatus("Ingresando…");
+            StartCoroutine(_api.IdentifyStudent(nombre, documento, (ok, msg) =>
             {
                 SetBusy(false);
                 if (!ok)
                 {
-                    SetLoginStatus("Error: " + msg);
+                    ShowAlertModal("No se pudo ingresar", msg);
                     Debug.Log("[Empathia] ERROR ingreso estudiante: " + msg);
                     return;
                 }
@@ -531,7 +667,7 @@ namespace Empathia
         {
             if (_busy) return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://127.0.0.1:8000/api/v1"
+                ? "http://192.168.1.31:8000/api/v1"
                 : _baseUrl.text.Trim();
             StartCoroutine(CheckConnectionToB(silent: false));
         }
@@ -551,11 +687,16 @@ namespace Empathia
             });
 
             SetBusy(false);
-            SetLoginStatus(msg);
             if (ok)
+            {
+                SetLoginStatus("");
                 Debug.Log("[Empathia] " + msg);
+            }
             else
+            {
+                ShowAlertModal("Sin conexión", msg);
                 Debug.LogWarning("[Empathia] " + msg);
+            }
         }
 
         void BuildPickStudentView(Transform canvas)
@@ -767,6 +908,7 @@ namespace Empathia
         void ShowScreen(UiScreen screen)
         {
             _screen = screen;
+            HideAlertModal();
             if (_loginView != null) _loginView.SetActive(screen == UiScreen.Login);
             if (_pickStudentView != null) _pickStudentView.SetActive(screen == UiScreen.PickStudent);
             if (_confirmView != null) _confirmView.SetActive(screen == UiScreen.Confirm);
@@ -798,8 +940,9 @@ namespace Empathia
             SetBusy(false);
             if (!ok)
             {
+                ShowAlertModal("Error", msg);
                 if (_pickStatus != null)
-                    _pickStatus.text = EmpathiaText.ForUi("Error: " + msg);
+                    _pickStatus.text = EmpathiaText.ForUi("No se pudieron cargar los estudiantes.");
                 yield break;
             }
 
@@ -838,8 +981,9 @@ namespace Empathia
                 SetBusy(false);
                 if (!ok)
                 {
+                    ShowAlertModal("No se pudo abrir la sesión", msg);
                     if (_pickStatus != null)
-                        _pickStatus.text = EmpathiaText.ForUi("Error: " + msg);
+                        _pickStatus.text = EmpathiaText.ForUi("No se pudo abrir la sesión.");
                     Debug.LogWarning("[Empathia] Assume: " + msg);
                     return;
                 }
@@ -902,26 +1046,45 @@ namespace Empathia
             var aspect = Screen.width / Mathf.Max(1f, (float)Screen.height);
             _scaler.matchWidthOrHeight = Mathf.Abs(aspect - (RefW / RefH)) < 0.08f ? 0.5f : (aspect >= 1.4f ? 0.5f : 0.7f);
 
-            if (_cardRt != null)
-            {
-                var tall = _studentTab;
-                _cardRt.anchorMin = _cardRt.anchorMax = new Vector2(0.5f, tall ? 0.46f : 0.42f);
-                _cardRt.sizeDelta = tall ? new Vector2(520, 700) : new Vector2(500, 520);
-            }
-            if (_cardShadowGo != null)
-            {
-                var shadowRt = _cardShadowGo.GetComponent<RectTransform>();
-                if (shadowRt != null)
-                {
-                    shadowRt.anchorMin = shadowRt.anchorMax = _cardRt != null ? _cardRt.anchorMin : new Vector2(0.5f, 0.46f);
-                    shadowRt.sizeDelta = _studentTab ? new Vector2(530, 690) : new Vector2(510, 510);
-                    shadowRt.anchoredPosition = new Vector2(0, -6);
-                }
-            }
+            PlaceBackground();
+            PlaceLoginCard();
             if (_confirmRt != null)
                 _confirmRt.sizeDelta = new Vector2(520, 360);
             if (_healthRt != null)
                 _healthRt.sizeDelta = new Vector2(780, 500);
+        }
+
+        void PlaceBackground()
+        {
+            if (_bgRt == null)
+                return;
+
+            StretchFull(_bgRt);
+        }
+
+        void PlaceLoginCard()
+        {
+            if (_cardRt != null)
+            {
+                _cardRt.anchorMin = new Vector2(0.5f, LoginCardBottom);
+                _cardRt.anchorMax = new Vector2(0.5f, LoginCardTop);
+                _cardRt.pivot = new Vector2(0.5f, 0.5f);
+                _cardRt.sizeDelta = new Vector2(LoginCardW, 0);
+                _cardRt.anchoredPosition = Vector2.zero;
+            }
+
+            if (_cardShadowGo == null)
+                return;
+
+            var shadowRt = _cardShadowGo.GetComponent<RectTransform>();
+            if (shadowRt == null)
+                return;
+
+            shadowRt.anchorMin = new Vector2(0.5f, LoginCardBottom);
+            shadowRt.anchorMax = new Vector2(0.5f, LoginCardTop);
+            shadowRt.pivot = new Vector2(0.5f, 0.5f);
+            shadowRt.sizeDelta = new Vector2(LoginCardW + 16f, 0);
+            shadowRt.anchoredPosition = new Vector2(0, -6);
         }
 
         Image CreateImage(Transform parent, string name, Color color)
@@ -989,8 +1152,8 @@ namespace Empathia
             outline.effectDistance = new Vector2(1.2f, -1.2f);
 
             var le = fieldGo.GetComponent<LayoutElement>();
-            le.preferredHeight = 54;
-            le.minHeight = 54;
+            le.preferredHeight = LoginFieldH;
+            le.minHeight = LoginFieldH;
             le.flexibleWidth = 1f;
 
             var iconGo = new GameObject("Icon", typeof(RectTransform), typeof(Image));
@@ -1004,8 +1167,8 @@ namespace Empathia
             iconRt.anchorMin = new Vector2(0, 0.5f);
             iconRt.anchorMax = new Vector2(0, 0.5f);
             iconRt.pivot = new Vector2(0.5f, 0.5f);
-            iconRt.sizeDelta = new Vector2(22, 22);
-            iconRt.anchoredPosition = new Vector2(28, 0);
+            iconRt.sizeDelta = new Vector2(28, 28);
+            iconRt.anchoredPosition = new Vector2(32, 0);
 
             float rightPad = password ? 48f : 14f;
 
@@ -1013,14 +1176,14 @@ namespace Empathia
             textArea.transform.SetParent(fieldGo.transform, false);
             var areaRt = textArea.GetComponent<RectTransform>();
             StretchFull(areaRt);
-            areaRt.offsetMin = new Vector2(48, 10);
-            areaRt.offsetMax = new Vector2(-rightPad, -10);
+            areaRt.offsetMin = new Vector2(56, 12);
+            areaRt.offsetMax = new Vector2(-rightPad, -12);
 
             var textGo = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
             textGo.transform.SetParent(textArea.transform, false);
             var text = textGo.GetComponent<TextMeshProUGUI>();
             text.font = GetTmpFont();
-            text.fontSize = 16;
+            text.fontSize = 20;
             text.color = Navy;
             text.alignment = TextAlignmentOptions.MidlineLeft;
             text.enableWordWrapping = false;
@@ -1032,7 +1195,7 @@ namespace Empathia
             phGo.transform.SetParent(textArea.transform, false);
             var ph = phGo.GetComponent<TextMeshProUGUI>();
             ph.font = GetTmpFont();
-            ph.fontSize = 16;
+            ph.fontSize = 20;
             ph.fontStyle = FontStyles.Normal;
             ph.color = new Color(Muted.r, Muted.g, Muted.b, 0.85f);
             ph.text = placeholder;
@@ -1044,7 +1207,7 @@ namespace Empathia
             input.textComponent = text;
             input.placeholder = ph;
             input.fontAsset = GetTmpFont();
-            input.pointSize = 16;
+            input.pointSize = 20;
             input.text = value ?? "";
             input.caretColor = Purple;
             input.selectionColor = new Color(Purple.r, Purple.g, Purple.b, 0.25f);
@@ -1054,6 +1217,203 @@ namespace Empathia
                 _eyeBtn = AddEyeToggle(fieldGo.transform, input);
             }
             return input;
+        }
+
+        static string SelectedOption(TMP_Dropdown dropdown)
+        {
+            if (dropdown == null || dropdown.options == null || dropdown.options.Count == 0)
+                return "";
+            var index = Mathf.Clamp(dropdown.value, 0, dropdown.options.Count - 1);
+            return (dropdown.options[index].text ?? "").Trim();
+        }
+
+        static string[] GradesForCampus(string campus)
+        {
+            switch (campus)
+            {
+                case "Sede Principal":
+                    return new[] { "6°", "7°", "8°", "9°", "10°", "11°" };
+                case "Sede Jhon F. kennedy":
+                    return new[] { "Jardín", "Transición", "1°", "Aceleración del Aprendizaje" };
+                case "Sede Gustavo Rojas Pinilla":
+                    return new[] { "2°", "3°", "4°", "5°" };
+                case "Sede Villa Paraguay":
+                    return new[] { "Jardín", "Transición", "1°", "2°", "3°", "4°", "5°" };
+                default:
+                    return new[] { "6°" };
+            }
+        }
+
+        static void SetDropdownOptions(TMP_Dropdown dropdown, string[] options, string prefer)
+        {
+            if (dropdown == null || options == null || options.Length == 0)
+                return;
+
+            dropdown.ClearOptions();
+            dropdown.AddOptions(new List<string>(options));
+            var index = 0;
+            if (!string.IsNullOrEmpty(prefer))
+            {
+                for (var i = 0; i < options.Length; i++)
+                {
+                    if (options[i] == prefer)
+                    {
+                        index = i;
+                        break;
+                    }
+                }
+            }
+
+            dropdown.value = index;
+            dropdown.RefreshShownValue();
+
+            if (dropdown.template != null)
+                dropdown.template.sizeDelta = new Vector2(0, Mathf.Min(LoginDropItemH * options.Length + 16f, 440f));
+        }
+
+        TMP_Dropdown AddOptionDropdown(Transform parent, string placeholder, params string[] options)
+        {
+            var fieldGo = new GameObject(placeholder, typeof(RectTransform), typeof(Image), typeof(TMP_Dropdown), typeof(LayoutElement));
+            fieldGo.transform.SetParent(parent, false);
+            var fieldImg = fieldGo.GetComponent<Image>();
+            fieldImg.color = FieldBg;
+            ApplyRounded(fieldImg, RoundSprite(128, 28), 1.35f);
+            var outline = fieldGo.AddComponent<Outline>();
+            outline.effectColor = FieldBorder;
+            outline.effectDistance = new Vector2(1.2f, -1.2f);
+
+            var le = fieldGo.GetComponent<LayoutElement>();
+            le.preferredHeight = LoginFieldH;
+            le.minHeight = LoginFieldH;
+            le.flexibleWidth = 1f;
+
+            var captionGo = new GameObject("Label", typeof(RectTransform), typeof(TextMeshProUGUI));
+            captionGo.transform.SetParent(fieldGo.transform, false);
+            var caption = captionGo.GetComponent<TextMeshProUGUI>();
+            caption.font = GetTmpFont();
+            caption.fontSize = 20;
+            caption.color = Navy;
+            caption.alignment = TextAlignmentOptions.MidlineLeft;
+            caption.enableWordWrapping = false;
+            caption.overflowMode = TextOverflowModes.Ellipsis;
+            caption.raycastTarget = false;
+            StretchFull(caption.rectTransform);
+            caption.rectTransform.offsetMin = new Vector2(16, 8);
+            caption.rectTransform.offsetMax = new Vector2(-36, -8);
+
+            var arrowGo = new GameObject("Arrow", typeof(RectTransform), typeof(Image));
+            arrowGo.transform.SetParent(fieldGo.transform, false);
+            var arrow = arrowGo.GetComponent<Image>();
+            arrow.sprite = BuildIconSprite("down");
+            arrow.color = Muted;
+            arrow.preserveAspect = true;
+            arrow.raycastTarget = false;
+            var arrowRt = arrow.rectTransform;
+            arrowRt.anchorMin = new Vector2(1, 0.5f);
+            arrowRt.anchorMax = new Vector2(1, 0.5f);
+            arrowRt.pivot = new Vector2(1, 0.5f);
+            arrowRt.sizeDelta = new Vector2(16, 16);
+            arrowRt.anchoredPosition = new Vector2(-16, 0);
+
+            var templateGo = new GameObject("Template", typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(LayoutElement));
+            templateGo.transform.SetParent(fieldGo.transform, false);
+            templateGo.GetComponent<LayoutElement>().ignoreLayout = true;
+            var templateImg = templateGo.GetComponent<Image>();
+            templateImg.color = Color.white;
+            ApplyRounded(templateImg, RoundSprite(128, 20), 1.2f);
+            var templateRt = templateGo.GetComponent<RectTransform>();
+            templateRt.anchorMin = new Vector2(0, 0);
+            templateRt.anchorMax = new Vector2(1, 0);
+            templateRt.pivot = new Vector2(0.5f, 1f);
+            templateRt.sizeDelta = new Vector2(0, 360);
+            templateRt.anchoredPosition = new Vector2(0, -4);
+            var overlay = templateGo.AddComponent<Canvas>();
+            overlay.overrideSorting = true;
+            overlay.sortingOrder = 80;
+            templateGo.AddComponent<GraphicRaycaster>();
+
+            var viewportGo = new GameObject("Viewport", typeof(RectTransform), typeof(Image), typeof(Mask));
+            viewportGo.transform.SetParent(templateGo.transform, false);
+            var viewportImg = viewportGo.GetComponent<Image>();
+            viewportImg.color = Color.white;
+            viewportGo.GetComponent<Mask>().showMaskGraphic = false;
+            var viewportRt = viewportGo.GetComponent<RectTransform>();
+            StretchFull(viewportRt);
+            viewportRt.offsetMin = new Vector2(4, 4);
+            viewportRt.offsetMax = new Vector2(-4, -4);
+
+            var contentGo = new GameObject("Content", typeof(RectTransform));
+            contentGo.transform.SetParent(viewportGo.transform, false);
+            var contentRt = contentGo.GetComponent<RectTransform>();
+            contentRt.anchorMin = new Vector2(0, 1);
+            contentRt.anchorMax = new Vector2(1, 1);
+            contentRt.pivot = new Vector2(0.5f, 1f);
+            contentRt.anchoredPosition = Vector2.zero;
+            contentRt.sizeDelta = new Vector2(0, LoginDropItemH);
+
+            var itemGo = new GameObject("Item", typeof(RectTransform), typeof(Toggle), typeof(Image));
+            itemGo.transform.SetParent(contentGo.transform, false);
+            var itemBg = itemGo.GetComponent<Image>();
+            itemBg.color = new Color(1f, 1f, 1f, 0.01f);
+            var itemRt = itemGo.GetComponent<RectTransform>();
+            itemRt.anchorMin = new Vector2(0, 0.5f);
+            itemRt.anchorMax = new Vector2(1, 0.5f);
+            itemRt.pivot = new Vector2(0.5f, 0.5f);
+            itemRt.sizeDelta = new Vector2(0, LoginDropItemH);
+
+            var checkGo = new GameObject("Item Checkmark", typeof(RectTransform), typeof(Image));
+            checkGo.transform.SetParent(itemGo.transform, false);
+            var checkImg = checkGo.GetComponent<Image>();
+            checkImg.color = Purple;
+            var checkRt = checkGo.GetComponent<RectTransform>();
+            checkRt.anchorMin = new Vector2(0, 0.5f);
+            checkRt.anchorMax = new Vector2(0, 0.5f);
+            checkRt.pivot = new Vector2(0.5f, 0.5f);
+            checkRt.sizeDelta = new Vector2(8, 8);
+            checkRt.anchoredPosition = new Vector2(16, 0);
+
+            var itemLabelGo = new GameObject("Item Label", typeof(RectTransform), typeof(TextMeshProUGUI));
+            itemLabelGo.transform.SetParent(itemGo.transform, false);
+            var itemLabel = itemLabelGo.GetComponent<TextMeshProUGUI>();
+            itemLabel.font = GetTmpFont();
+            itemLabel.fontSize = 20;
+            itemLabel.color = Navy;
+            itemLabel.alignment = TextAlignmentOptions.MidlineLeft;
+            itemLabel.enableWordWrapping = false;
+            itemLabel.overflowMode = TextOverflowModes.Ellipsis;
+            itemLabel.raycastTarget = false;
+            StretchFull(itemLabel.rectTransform);
+            itemLabel.rectTransform.offsetMin = new Vector2(32, 4);
+            itemLabel.rectTransform.offsetMax = new Vector2(-10, -4);
+
+            var toggle = itemGo.GetComponent<Toggle>();
+            toggle.targetGraphic = itemBg;
+            toggle.graphic = checkImg;
+            toggle.isOn = true;
+
+            var colors = toggle.colors;
+            colors.highlightedColor = new Color(0.93f, 0.90f, 1f, 1f);
+            colors.selectedColor = new Color(0.90f, 0.86f, 1f, 1f);
+            toggle.colors = colors;
+
+            var scroll = templateGo.GetComponent<ScrollRect>();
+            scroll.content = contentRt;
+            scroll.viewport = viewportRt;
+            scroll.horizontal = false;
+            scroll.vertical = true;
+            scroll.movementType = ScrollRect.MovementType.Clamped;
+
+            var dropdown = fieldGo.GetComponent<TMP_Dropdown>();
+            dropdown.targetGraphic = fieldImg;
+            dropdown.template = templateRt;
+            dropdown.captionText = caption;
+            dropdown.itemText = itemLabel;
+            dropdown.ClearOptions();
+            dropdown.AddOptions(new List<string>(options));
+            dropdown.value = 0;
+            dropdown.RefreshShownValue();
+            templateGo.SetActive(false);
+            return dropdown;
         }
 
         Button AddEyeToggle(Transform parent, TMP_InputField input)
@@ -1213,7 +1573,7 @@ namespace Empathia
             var t = textGo.GetComponent<TextMeshProUGUI>();
             t.text = label;
             t.font = GetTmpFont();
-            t.fontSize = 17;
+            t.fontSize = 20;
             t.fontStyle = FontStyles.Bold;
             t.alignment = TextAlignmentOptions.Center;
             t.color = Purple;
@@ -1262,7 +1622,7 @@ namespace Empathia
         {
             if (_busy) return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://127.0.0.1:8000/api/v1"
+                ? "http://192.168.1.31:8000/api/v1"
                 : _baseUrl.text.Trim();
 
             SetBusy(true);
@@ -1288,7 +1648,7 @@ namespace Empathia
                 }
                 else
                 {
-                    SetLoginStatus("Error: " + msg);
+                    ShowAlertModal("No se pudo iniciar sesión", msg);
                     Debug.Log("[Empathia] ERROR " + msg);
                 }
             }));
@@ -1640,9 +2000,12 @@ namespace Empathia
             _busy = busy;
             if (_loginBtn != null) _loginBtn.interactable = !busy;
             if (_studentLoginBtn != null) _studentLoginBtn.interactable = !busy;
-            if (_tabStudentBtn != null) _tabStudentBtn.interactable = !busy;
-            if (_tabAdultBtn != null) _tabAdultBtn.interactable = !busy;
             if (_registerBtn != null) _registerBtn.interactable = !busy;
+            if (_createStudentBtn != null) _createStudentBtn.interactable = !busy;
+            if (_backToLoginBtn != null) _backToLoginBtn.interactable = !busy;
+            if (_regCampus != null) _regCampus.interactable = !busy;
+            if (_regGrade != null) _regGrade.interactable = !busy;
+            if (_regShift != null) _regShift.interactable = !busy;
             if (_checkBBtn != null) _checkBBtn.interactable = !busy;
             if (_confirmBtn != null) _confirmBtn.interactable = !busy;
             // Durante grabación el botón debe seguir activo para el 2.º toque
@@ -1668,6 +2031,84 @@ namespace Empathia
         {
             if (_loginStatus != null)
                 _loginStatus.text = EmpathiaText.ForUi(s ?? "");
+        }
+
+        void BuildAlertModal(Transform canvas)
+        {
+            _alertModal = new GameObject("AlertModal", typeof(RectTransform));
+            _alertModal.transform.SetParent(canvas, false);
+            StretchFull(_alertModal.GetComponent<RectTransform>());
+
+            var dim = CreateImage(_alertModal.transform, "Dim", new Color(0.08f, 0.07f, 0.14f, 0.48f));
+            StretchFull(dim.rectTransform);
+            dim.raycastTarget = true;
+
+            var card = CreateImage(_alertModal.transform, "AlertCard", Color.white);
+            ApplyRounded(card, RoundSprite(256, 48), 1.05f);
+            var cardRt = card.rectTransform;
+            cardRt.anchorMin = cardRt.anchorMax = cardRt.pivot = new Vector2(0.5f, 0.5f);
+            cardRt.sizeDelta = new Vector2(560, 340);
+
+            var content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup));
+            content.transform.SetParent(cardRt, false);
+            var contentRt = content.GetComponent<RectTransform>();
+            StretchFull(contentRt);
+            contentRt.offsetMin = new Vector2(36, 28);
+            contentRt.offsetMax = new Vector2(-36, -28);
+            var v = content.GetComponent<VerticalLayoutGroup>();
+            v.spacing = 14;
+            v.childAlignment = TextAnchor.UpperCenter;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+
+            _alertTitle = AddLabel(content.transform, "Aviso", 26, FontStyles.Bold, Navy, 40, TextAlignmentOptions.Center);
+            _alertBody = AddLabel(content.transform, "", 17, FontStyles.Normal, Muted, 160, TextAlignmentOptions.Center);
+            _alertCloseBtn = AddGradientButton(content.transform, "Cerrar", 58, HideAlertModal, 20f);
+            _alertModal.SetActive(false);
+        }
+
+        void ShowAlertModal(string title, string message)
+        {
+            if (_alertModal == null)
+                return;
+            if (_alertTitle != null)
+                _alertTitle.text = EmpathiaText.ForUi(title ?? "Aviso");
+            if (_alertBody != null)
+                _alertBody.text = EmpathiaText.ForUi(CleanAlertMessage(message));
+            _alertModal.SetActive(true);
+            _alertModal.transform.SetAsLastSibling();
+            SetLoginStatus("");
+        }
+
+        void HideAlertModal()
+        {
+            if (_alertModal != null)
+                _alertModal.SetActive(false);
+        }
+
+        static string CleanAlertMessage(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                return "Ocurrió un problema. Intenta de nuevo.";
+
+            var text = message.Trim();
+            if (text.StartsWith("Error:", System.StringComparison.OrdinalIgnoreCase))
+                text = text.Substring(6).Trim();
+
+            if (text.IndexOf('{') >= 0 || text.IndexOf("\"status\"") >= 0)
+            {
+                if (text.IndexOf("timed out", System.StringComparison.OrdinalIgnoreCase) >= 0
+                    || text.IndexOf("Cannot connect", System.StringComparison.OrdinalIgnoreCase) >= 0
+                    || text.IndexOf("Connection", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    return "No hay conexión con el servidor. Revisa que B esté encendido.";
+                return "No se pudo completar la acción. Intenta de nuevo.";
+            }
+
+            if (text.Length > 220)
+                return text.Substring(0, 217) + "…";
+            return text;
         }
 
         void SetReply(string s)

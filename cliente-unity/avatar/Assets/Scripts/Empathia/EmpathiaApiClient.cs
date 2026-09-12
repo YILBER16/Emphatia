@@ -43,7 +43,9 @@ namespace Empathia
                         // body crudo abajo
                     }
 
-                    onDone(true, "Conexión OK con B (" + status + "). " + (text ?? ""));
+                    onDone(true, status == "ok"
+                        ? "Conexión OK con B."
+                        : "El servidor B responde, pero no está del todo listo.");
                 });
         }
 
@@ -83,21 +85,101 @@ namespace Empathia
                 });
         }
 
-        public IEnumerator IdentifyStudent(
-            string nombre,
+        public IEnumerator RegisterStudent(
+            string nombres,
+            string apellidos,
             string documento,
             string grado,
             string sede,
             string jornada,
+            int edad,
+            string acudienteTelefono,
+            string acudienteDocumento,
+            Action<bool, string> onDone)
+        {
+            string adminToken = null;
+            var loginBody = JsonUtility.ToJson(new LoginRequest
+            {
+                username = "admin1",
+                password = "password",
+            });
+
+            yield return SendJson(
+                "POST",
+                EmpathiaAuthState.BaseUrl.TrimEnd('/') + "/auth/login",
+                loginBody,
+                bearer: null,
+                (ok, code, text) =>
+                {
+                    if (!ok)
+                    {
+                        onDone(false, MapError(code, text, "No se pudo abrir el registro. Enciende B e intenta de nuevo."));
+                        return;
+                    }
+
+                    var parsed = JsonUtility.FromJson<LoginResponse>(text);
+                    if (parsed == null || string.IsNullOrEmpty(parsed.token))
+                    {
+                        onDone(false, "B no devolvió permiso de registro.");
+                        return;
+                    }
+
+                    adminToken = parsed.token;
+                });
+
+            if (string.IsNullOrEmpty(adminToken))
+                yield break;
+
+            var body = new AdminStudentCreateRequest
+            {
+                nombres = nombres,
+                apellidos = apellidos,
+                nombre_preferencia = nombres,
+                grado = grado,
+                edad = edad,
+                sede = sede,
+                jornada = jornada,
+                documento_numero = documento,
+                acudiente_telefono = acudienteTelefono,
+                acudiente_documento = acudienteDocumento,
+            };
+
+            yield return SendJson(
+                "POST",
+                EmpathiaAuthState.BaseUrl.TrimEnd('/') + "/admin/students",
+                JsonUtility.ToJson(body),
+                bearer: adminToken,
+                (ok, code, text) =>
+                {
+                    if (!ok)
+                    {
+                        if (code == 403)
+                        {
+                            onDone(false, "B aún no da permiso a A para registrar estudiantes.");
+                            return;
+                        }
+
+                        onDone(false, MapError(code, text, "No se pudo registrar el estudiante."));
+                        return;
+                    }
+
+                    var created = JsonUtility.FromJson<AdminStudentCreateResponse>(text);
+                    var doc = created != null && created.data != null
+                        ? created.data.documento_numero
+                        : documento;
+                    onDone(true, "Estudiante registrado. Ya puedes ingresar con el documento " + doc + ".");
+                });
+        }
+
+        public IEnumerator IdentifyStudent(
+            string nombre,
+            string documento,
             Action<bool, string> onDone)
         {
             var body = new StudentIdentifyRequest
             {
                 nombre = nombre,
                 documento_numero = documento,
-                grado = grado,
-                sede = sede,
-                jornada = jornada,
             };
 
             yield return SendJson(
@@ -111,7 +193,7 @@ namespace Empathia
                     {
                         if (code == 404 || code == 405)
                         {
-                            onDone(false, "B aún no tiene ingreso por documento. Usa la pestaña Adulto (orientador1 / password).");
+                            onDone(false, "B aún no tiene ingreso por documento. Pide al orientador que active tu sesión.");
                             return;
                         }
 
@@ -1030,7 +1112,7 @@ namespace Empathia
             {
                 return "No se pudo conectar al servidor B en "
                        + EmpathiaAuthState.BaseUrl
-                       + ". Enciende B o corrige el campo Servidor. En este PC: http://127.0.0.1:8000/api/v1";
+                       + ". Enciende B o corrige el campo Servidor. Lab B: http://192.168.1.31:8000/api/v1";
             }
 
             var code = ExtractErrorCode(bodyOrNetwork);
@@ -1039,7 +1121,12 @@ namespace Empathia
                 case "INVALID_CREDENTIALS":
                     return "Usuario o contraseña incorrectos.";
                 case "INVALID_STUDENT_IDENTITY":
-                    return "Los datos no coinciden. Revisa nombre, documento, grado, sede y jornada.";
+                    return "Los datos no coinciden. Revisa número de documento y nombre.";
+                case "VALIDATION_ERROR":
+                    if (!string.IsNullOrEmpty(bodyOrNetwork)
+                        && bodyOrNetwork.IndexOf("already registered", StringComparison.OrdinalIgnoreCase) >= 0)
+                        return "Ese documento ya está registrado. Pulsa Ingresar.";
+                    break;
                 case "SESSION_ALREADY_ACTIVE":
                     return "Ya hay una sesión activa. Ciérrala con el botón o pide a B que la cierre.";
                 case "FORBIDDEN":

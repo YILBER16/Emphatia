@@ -20,9 +20,36 @@ namespace Empathia
     {
         public string nombre;
         public string documento_numero;
+    }
+
+    [Serializable]
+    public class AdminStudentCreateRequest
+    {
+        public string nombres;
+        public string apellidos;
+        public string nombre_preferencia;
         public string grado;
+        public int edad;
         public string sede;
         public string jornada;
+        public string documento_numero;
+        public string acudiente_telefono;
+        public string acudiente_documento;
+    }
+
+    [Serializable]
+    public class AdminStudentCreateResponse
+    {
+        public AdminStudentCreated data;
+        public string message;
+    }
+
+    [Serializable]
+    public class AdminStudentCreated
+    {
+        public string user_id;
+        public string documento_numero;
+        public string access_code;
     }
 
     [Serializable]

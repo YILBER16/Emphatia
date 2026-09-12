@@ -10,7 +10,7 @@ namespace Empathia
         const string PrefSessionId = "Empathia.LastSessionId";
 
         // IP B por defecto (lab). Editable en la UI de login.
-        public static string BaseUrl { get; set; } = "http://127.0.0.1:8000/api/v1";
+        public static string BaseUrl { get; set; } = "http://192.168.1.31:8000/api/v1";
         public static string Token { get; set; }
         /// <summary>Token del adulto (admin/counselor) antes del assume.</summary>
         public static string AdultToken { get; set; }
