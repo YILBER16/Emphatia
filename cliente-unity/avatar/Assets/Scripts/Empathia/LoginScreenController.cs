@@ -74,8 +74,6 @@ namespace Empathia
         TMP_InputField _baseUrl;
         TMP_InputField _user;
         TMP_InputField _pass;
-        TMP_InputField _studentName;
-        TMP_InputField _studentDoc;
         TMP_InputField _regName;
         TMP_InputField _regDoc;
         TMP_Dropdown _regCampus;
@@ -84,7 +82,9 @@ namespace Empathia
         GameObject _studentLoginPanel;
         GameObject _registerPanel;
         GameObject _adultLoginPanel;
-        Button _studentLoginBtn;
+        Transform _loginListContent;
+        Button _refreshListBtn;
+        StudentListItem[] _directoryStudents;
         Button _createStudentBtn;
         Button _backToLoginBtn;
         TMP_InputField _typedMessage;
@@ -437,9 +437,9 @@ namespace Empathia
             _baseUrl = AddCompactInput(content.transform, "Servidor", EmpathiaAuthState.BaseUrl);
 
             _studentLoginPanel = CreateLoginPanel(content.transform, "StudentFields");
-            _studentDoc = AddIconInput(_studentLoginPanel.transform, "Número de documento", "1000000001", "lock", false);
-            _studentName = AddIconInput(_studentLoginPanel.transform, "Nombre y apellido", "Estudiante Uno", "user", false);
-            _studentLoginBtn = AddGradientButton(_studentLoginPanel.transform, "Ingresar", 72, OnStudentLogin, 24f);
+            AddLabel(_studentLoginPanel.transform, "Elige tu nombre", 20, FontStyles.Bold, Navy, 28, TextAlignmentOptions.Center);
+            _loginListContent = CreateScrollList(_studentLoginPanel.transform, 260);
+            _refreshListBtn = AddOutlineButton(_studentLoginPanel.transform, "Actualizar lista", 50, () => StartCoroutine(LoadDirectoryList()));
 
             _registerPanel = CreateLoginPanel(content.transform, "RegisterFields");
             _regDoc = AddIconInput(_registerPanel.transform, "Número de documento", "", "lock", false);
@@ -473,7 +473,7 @@ namespace Empathia
             _loginBtn = AddGradientButton(_adultLoginPanel.transform, "Iniciar sesión", 58, OnLogin);
 
             _registerBtn = AddOutlineButton(content.transform, "Registrarse", 62, OnRegister);
-            AddLabel(content.transform, "Si ya estás registrado, ingresa documento y nombre.", 16, FontStyles.Normal, Muted, 28, TextAlignmentOptions.Center);
+            AddLabel(content.transform, "La lista muestra solo el nombre. Al entrar usa todos los datos del perfil.", 16, FontStyles.Normal, Muted, 36, TextAlignmentOptions.Center);
             _loginStatus = AddLabel(content.transform, "", 14, FontStyles.Normal, Muted, 24, TextAlignmentOptions.Center);
             if (_adultLoginPanel != null)
                 _adultLoginPanel.SetActive(false);
@@ -512,7 +512,9 @@ namespace Empathia
                 _registerBtn.gameObject.SetActive(!register);
             SetLoginStatus(register
                 ? "Completa tus datos para crear el perfil."
-                : "Escribe tus datos escolares y pulsa Ingresar.");
+                : "Elige tu nombre en la lista.");
+            if (!register)
+                StartCoroutine(LoadDirectoryList());
         }
 
         void RefreshRegisterGrades()
@@ -620,44 +622,120 @@ namespace Empathia
                         return;
                     }
 
-                    if (_studentDoc != null)
-                        _studentDoc.text = documento;
-                    if (_studentName != null)
-                        _studentName.text = nombreCompleto;
                     ShowRegisterForm(false);
                     ShowAlertModal("Registro listo", msg);
                 }));
         }
 
-        void OnStudentLogin()
+        Transform CreateScrollList(Transform parent, float height)
         {
-            if (_busy) return;
-            EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://192.168.1.31:8000/api/v1"
-                : _baseUrl.text.Trim();
+            var scrollGo = new GameObject("Scroll", typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(LayoutElement));
+            scrollGo.transform.SetParent(parent, false);
+            scrollGo.GetComponent<Image>().color = FieldBg;
+            ApplyRounded(scrollGo.GetComponent<Image>(), RoundSprite(128, 24), 1f);
+            var le = scrollGo.GetComponent<LayoutElement>();
+            le.preferredHeight = height;
+            le.minHeight = height;
+            le.flexibleWidth = 1f;
 
-            var nombre = _studentName != null ? _studentName.text.Trim() : "";
-            var documento = _studentDoc != null ? _studentDoc.text.Trim() : "";
+            var viewport = new GameObject("Viewport", typeof(RectTransform), typeof(RectMask2D));
+            viewport.transform.SetParent(scrollGo.transform, false);
+            StretchFull(viewport.GetComponent<RectTransform>());
+            viewport.GetComponent<RectTransform>().offsetMin = new Vector2(8, 8);
+            viewport.GetComponent<RectTransform>().offsetMax = new Vector2(-8, -8);
 
-            if (string.IsNullOrWhiteSpace(nombre) || string.IsNullOrWhiteSpace(documento))
-            {
-                ShowAlertModal("Datos incompletos", "Completa número de documento y nombre.");
-                return;
-            }
+            var list = new GameObject("List", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            list.transform.SetParent(viewport.transform, false);
+            var listRt = list.GetComponent<RectTransform>();
+            listRt.anchorMin = new Vector2(0, 1);
+            listRt.anchorMax = new Vector2(1, 1);
+            listRt.pivot = new Vector2(0.5f, 1f);
+            listRt.anchoredPosition = Vector2.zero;
+            listRt.sizeDelta = new Vector2(0, 0);
+            var listV = list.GetComponent<VerticalLayoutGroup>();
+            listV.spacing = 8;
+            listV.childControlWidth = true;
+            listV.childControlHeight = true;
+            listV.childForceExpandWidth = true;
+            listV.childForceExpandHeight = false;
+            list.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var scroll = scrollGo.GetComponent<ScrollRect>();
+            scroll.viewport = viewport.GetComponent<RectTransform>();
+            scroll.content = listRt;
+            scroll.horizontal = false;
+            scroll.vertical = true;
+            return list.transform;
+        }
+
+        IEnumerator LoadDirectoryList()
+        {
+            if (_loginListContent == null)
+                yield break;
+
+            EmpathiaAuthState.BaseUrl = _baseUrl != null && !string.IsNullOrWhiteSpace(_baseUrl.text)
+                ? _baseUrl.text.Trim()
+                : EmpathiaAuthState.BaseUrl;
 
             SetBusy(true);
-            SetLoginStatus("Ingresando…");
-            StartCoroutine(_api.IdentifyStudent(nombre, documento, (ok, msg) =>
+            SetLoginStatus("Cargando estudiantes…");
+            for (var i = _loginListContent.childCount - 1; i >= 0; i--)
+                Destroy(_loginListContent.GetChild(i).gameObject);
+
+            var ok = false;
+            var msg = "";
+            StudentListItem[] items = null;
+            yield return _api.ListDirectoryStudents((success, message, data) =>
+            {
+                ok = success;
+                msg = message;
+                items = data;
+            });
+
+            SetBusy(false);
+            if (!ok)
+            {
+                _directoryStudents = new StudentListItem[0];
+                SetLoginStatus("");
+                ShowAlertModal("No se pudo cargar la lista", msg);
+                yield break;
+            }
+
+            _directoryStudents = items ?? new StudentListItem[0];
+            foreach (var item in _directoryStudents)
+            {
+                if (item == null)
+                    continue;
+                var captured = item;
+                AddOutlineButton(_loginListContent, captured.PreviewName, 56, () => OnPickDirectoryStudent(captured));
+            }
+
+            SetLoginStatus(_directoryStudents.Length == 0
+                ? "No hay estudiantes. Pulsa Registrarse."
+                : "Elige tu nombre. Hay " + _directoryStudents.Length + " perfil(es).");
+        }
+
+        void OnPickDirectoryStudent(StudentListItem item)
+        {
+            if (_busy || item == null)
+                return;
+
+            SetBusy(true);
+            SetLoginStatus("Ingresando como " + item.PreviewName + "…");
+            StartCoroutine(_api.EnterAsDirectoryStudent(item, (ok, msg) =>
             {
                 SetBusy(false);
                 if (!ok)
                 {
                     ShowAlertModal("No se pudo ingresar", msg);
-                    Debug.Log("[Empathia] ERROR ingreso estudiante: " + msg);
                     return;
                 }
 
-                Debug.Log("[Empathia] " + msg);
+                Debug.Log("[Empathia] Ingreso con perfil completo: " + item.PreviewName
+                    + " doc=" + (item.documento_numero ?? "")
+                    + " grado=" + (item.grado ?? "")
+                    + " sede=" + (item.sede ?? "")
+                    + " jornada=" + (item.jornada ?? ""));
                 SetLoginStatus("Ingreso OK. Confirma para continuar.");
                 ShowScreen(UiScreen.Confirm);
             }));
@@ -691,6 +769,8 @@ namespace Empathia
             {
                 SetLoginStatus("");
                 Debug.Log("[Empathia] " + msg);
+                if (!silent)
+                    yield return LoadDirectoryList();
             }
             else
             {
@@ -1999,7 +2079,7 @@ namespace Empathia
         {
             _busy = busy;
             if (_loginBtn != null) _loginBtn.interactable = !busy;
-            if (_studentLoginBtn != null) _studentLoginBtn.interactable = !busy;
+            if (_refreshListBtn != null) _refreshListBtn.interactable = !busy;
             if (_registerBtn != null) _registerBtn.interactable = !busy;
             if (_createStudentBtn != null) _createStudentBtn.interactable = !busy;
             if (_backToLoginBtn != null) _backToLoginBtn.interactable = !busy;

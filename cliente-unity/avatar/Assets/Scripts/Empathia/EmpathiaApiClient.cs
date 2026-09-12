@@ -85,6 +85,108 @@ namespace Empathia
                 });
         }
 
+        IEnumerator LoginAsAdmin(Action<bool, string, string> onDone)
+        {
+            var loginBody = JsonUtility.ToJson(new LoginRequest
+            {
+                username = "admin1",
+                password = "password",
+            });
+
+            yield return SendJson(
+                "POST",
+                EmpathiaAuthState.BaseUrl.TrimEnd('/') + "/auth/login",
+                loginBody,
+                bearer: null,
+                (ok, code, text) =>
+                {
+                    if (!ok)
+                    {
+                        onDone(false, MapError(code, text, "No se pudo abrir la lista de estudiantes. Enciende B."), null);
+                        return;
+                    }
+
+                    var parsed = JsonUtility.FromJson<LoginResponse>(text);
+                    if (parsed == null || string.IsNullOrEmpty(parsed.token))
+                    {
+                        onDone(false, "B no devolvió permiso para leer perfiles.", null);
+                        return;
+                    }
+
+                    onDone(true, "OK", parsed.token);
+                });
+        }
+
+        public IEnumerator ListDirectoryStudents(Action<bool, string, StudentListItem[]> onDone)
+        {
+            string adminToken = null;
+            yield return LoginAsAdmin((ok, msg, token) =>
+            {
+                if (!ok)
+                {
+                    onDone(false, msg, null);
+                    return;
+                }
+
+                adminToken = token;
+            });
+
+            if (string.IsNullOrEmpty(adminToken))
+                yield break;
+
+            yield return SendJson(
+                "GET",
+                EmpathiaAuthState.BaseUrl.TrimEnd('/') + "/admin/students?active_only=1",
+                "{}",
+                bearer: adminToken,
+                (ok, code, text) =>
+                {
+                    if (!ok)
+                    {
+                        onDone(false, MapError(code, text, "No se pudieron leer los perfiles de B."), null);
+                        return;
+                    }
+
+                    var parsed = JsonUtility.FromJson<StudentsListResponse>(text);
+                    var items = parsed != null && parsed.data != null ? parsed.data : new StudentListItem[0];
+                    onDone(true, "Perfiles activos: " + items.Length, items);
+                });
+        }
+
+        public IEnumerator EnterAsDirectoryStudent(StudentListItem item, Action<bool, string> onDone)
+        {
+            if (item == null || string.IsNullOrEmpty(item.UserId))
+            {
+                onDone(false, "Ese perfil no tiene datos suficientes.");
+                yield break;
+            }
+
+            EmpathiaAuthState.SelectedStudent = item;
+
+            string adminToken = null;
+            yield return LoginAsAdmin((ok, msg, token) =>
+            {
+                if (!ok)
+                {
+                    onDone(false, msg);
+                    return;
+                }
+
+                adminToken = token;
+            });
+
+            if (string.IsNullOrEmpty(adminToken))
+                yield break;
+
+            EmpathiaAuthState.AdultToken = adminToken;
+            yield return AssumeStudent(item.UserId, (ok, msg) =>
+            {
+                if (ok)
+                    EmpathiaAuthState.SelectedStudent = item;
+                onDone(ok, msg);
+            });
+        }
+
         public IEnumerator RegisterStudent(
             string nombres,
             string apellidos,

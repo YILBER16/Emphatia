@@ -80,6 +80,7 @@ namespace Empathia
     public class StudentListItem
     {
         public string id;
+        public string user_id;
         public int profile_id;
         public string display_name;
         public string nombre_preferencia;
@@ -89,7 +90,30 @@ namespace Empathia
         public int edad;
         public string sede;
         public string jornada;
+        public string documento_numero;
+        public string acudiente_telefono;
+        public string acudiente_documento;
+        public bool is_active = true;
         public string role;
+        public string username;
+
+        public string UserId
+        {
+            get { return !string.IsNullOrEmpty(user_id) ? user_id : id; }
+        }
+
+        public string PreviewName
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(display_name))
+                    return display_name.Trim();
+                if (!string.IsNullOrWhiteSpace(nombre_preferencia))
+                    return nombre_preferencia.Trim();
+                var full = ((nombres ?? "") + " " + (apellidos ?? "")).Trim();
+                return string.IsNullOrEmpty(full) ? "Estudiante" : full;
+            }
+        }
     }
 
     [Serializable]
