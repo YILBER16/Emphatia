@@ -18,6 +18,7 @@ namespace Empathia
         public static string Role { get; set; }
         public static string StudentUserId { get; set; }
         public static string StudentDisplayName { get; set; }
+        public static string PreferredName { get; set; }
 
         static string _sessionId;
         public static string SessionId
@@ -77,6 +78,7 @@ namespace Empathia
             Role = null;
             StudentUserId = null;
             StudentDisplayName = null;
+            PreferredName = null;
             ClearSessionMemory();
         }
     }

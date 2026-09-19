@@ -75,7 +75,8 @@ namespace Empathia
                     EmpathiaAuthState.Role = parsed.user != null ? parsed.user.role : null;
                     EmpathiaAuthState.AdultToken = null;
                     EmpathiaAuthState.StudentUserId = null;
-                    EmpathiaAuthState.StudentDisplayName = null;
+                    EmpathiaAuthState.StudentDisplayName = parsed.user != null ? parsed.user.display_name : null;
+                    EmpathiaAuthState.PreferredName = EmpathiaAuthState.StudentDisplayName;
                     if (EmpathiaAuthState.IsAdultStaff)
                         EmpathiaAuthState.AdultToken = parsed.token;
                     EmpathiaAuthState.ClearSessionMemory();
@@ -158,6 +159,7 @@ namespace Empathia
                     EmpathiaAuthState.StudentDisplayName = parsed.profile != null && !string.IsNullOrEmpty(parsed.profile.nombre_preferencia)
                         ? parsed.profile.nombre_preferencia
                         : (parsed.user != null ? parsed.user.display_name : studentUserId);
+                    EmpathiaAuthState.PreferredName = EmpathiaAuthState.StudentDisplayName;
                     EmpathiaAuthState.Username = EmpathiaAuthState.StudentDisplayName;
                     EmpathiaAuthState.ClearSessionMemory();
                     onDone(true, "Estudiante listo: " + EmpathiaAuthState.StudentDisplayName);
@@ -458,6 +460,7 @@ namespace Empathia
                 text = message.Trim(),
                 message = message.Trim(),
                 client_turn_key = turnKey,
+                preferred_name = EmpathiaAuthState.PreferredName,
             };
 
             Debug.Log("[Empathia] POST " + url + " | key=" + turnKey + " | " + message.Trim());
@@ -522,6 +525,7 @@ namespace Empathia
                 text = message.Trim(),
                 message = message.Trim(),
                 client_turn_key = turnKey,
+                preferred_name = EmpathiaAuthState.PreferredName,
             };
 
             Debug.Log("[Empathia] POST " + url + " | key=" + turnKey + " | " + message.Trim());

@@ -90,6 +90,7 @@ namespace Empathia
         public string text;
         public string message;
         public string client_turn_key;
+        public string preferred_name;
     }
 
     [Serializable]
@@ -101,7 +102,15 @@ namespace Empathia
         public string reply_text;
         public string transcript;
         public string message;
+        public EmotionDto emotion;
         public TurnDto turn;
+    }
+
+    [Serializable]
+    public class EmotionDto
+    {
+        public string label;
+        public float confidence;
     }
 
     [Serializable]

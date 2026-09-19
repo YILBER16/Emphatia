@@ -37,7 +37,11 @@ class TurnOrchestrator
                 $inference['transcript']['text'] = $studentText;
             }
         } catch (\Throwable $e) {
-            $this->console('[B→C TEXTO] C no respondió ('.$e->getMessage().') — uso stub local');
+            $this->console('[B→C TEXTO] C no respondió ('.$e->getMessage().')');
+            if (! config('empathia.intel_stub')) {
+                throw $e;
+            }
+            $this->console('[B→C TEXTO] INTEL_STUB=true — uso stub local');
             $inference = $this->stubInference($turn, $session, $studentText);
         }
 
@@ -46,7 +50,12 @@ class TurnOrchestrator
         $this->console('[B→C TEXTO] listo turn='.$turn->id.' reply='.($turn->reply_text ?? ''));
     }
 
-    public function processAcceptedTurn(Turn $turn, AccompanimentSession $session, string $audioAbsolutePath): void
+    public function processAcceptedTurn(
+        Turn $turn,
+        AccompanimentSession $session,
+        string $audioAbsolutePath,
+        ?string $preferredName = null,
+    ): void
     {
         $this->events->push($session, 'session.state', ['state' => 'processing']);
         $this->events->push($session, 'turn.processing', [
@@ -56,7 +65,7 @@ class TurnOrchestrator
 
         $inference = config('empathia.intel_stub')
             ? $this->stubInference($turn, $session)
-            : $this->callIntelligence($turn, $session, $audioAbsolutePath);
+            : $this->callIntelligence($turn, $session, $audioAbsolutePath, $preferredName);
 
         $this->persistInference($turn, $session, $inference);
 
@@ -158,6 +167,7 @@ class TurnOrchestrator
 
         $response = Http::timeout(120)
             ->connectTimeout(5)
+            ->retry(2, 250)
             ->withHeaders([
                 'X-Internal-Token' => config('empathia.intelligence_token'),
                 'Content-Type' => 'application/json',
@@ -171,7 +181,13 @@ class TurnOrchestrator
         return $response->json() ?? [];
     }
 
-    private function callIntelligence(Turn $turn, AccompanimentSession $session, string $audioAbsolutePath, ?string $studentText = null): array
+    private function callIntelligence(
+        Turn $turn,
+        AccompanimentSession $session,
+        string $audioAbsolutePath,
+        ?string $preferredName = null,
+        ?string $studentText = null,
+    ): array
     {
         $base = rtrim(config('empathia.intelligence_url'), '/');
         $payload = [
@@ -186,10 +202,14 @@ class TurnOrchestrator
         if ($studentText !== null && $studentText !== '') {
             $payload['text'] = $studentText;
         }
+        if ($preferredName !== null && $preferredName !== '') {
+            $payload['preferred_name'] = $preferredName;
+        }
         $payload['conversation_history'] = $this->conversationHistory($session);
 
         $response = Http::timeout(120)
             ->connectTimeout(5)
+            ->retry(2, 250)
             ->withHeaders(['X-Internal-Token' => config('empathia.intelligence_token')])
             ->post($base.'/internal/v1/infer/turn', $payload);
 
