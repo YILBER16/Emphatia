@@ -457,9 +457,15 @@ class EmpathiaController extends Controller
         $request->validate([
             'audio' => 'required|file',
             'client_turn_key' => 'required|uuid',
-            'preferred_name' => 'nullable|string|max:40',
+            'preferred_name' => 'nullable|string|max:80',
             'sequence_hint' => 'sometimes|integer',
         ]);
+
+        if ($request->filled('preferred_name')) {
+            $request->merge([
+                'preferred_name' => $this->normalizePreferredName($request->input('preferred_name')),
+            ]);
+        }
 
         $existing = Turn::query()
             ->where('session_id', $session->id)
@@ -541,24 +547,20 @@ class EmpathiaController extends Controller
             ], 422);
         }
 
+        // A a veces manda el nombre completo; C solo acepta 1–2 palabras.
+        if ($request->filled('preferred_name')) {
+            $request->merge([
+                'preferred_name' => $this->normalizePreferredName($request->input('preferred_name')),
+            ]);
+        }
+
         $data = $request->validate([
             'text' => 'required|string|min:1|max:5000',
             'client_turn_key' => 'required|uuid',
-            'preferred_name' => [
-                'nullable',
-                'string',
-                'max:40',
-                function (string $attribute, mixed $value, \Closure $fail): void {
-                    $normalized = trim((string) $value);
-                    if ($normalized !== '' && (count(preg_split('/\s+/', $normalized)) > 2
-                        || ! preg_match("/^[\\p{L}'\\- ]+$/u", $normalized))) {
-                        $fail('El nombre preferido debe contener una o dos palabras válidas.');
-                    }
-                },
-            ],
+            'preferred_name' => 'nullable|string|max:40',
         ]);
 
-        $this->console('[A→B TEXTO] session='.$session->id.' | '.$data['text']);
+        $this->console('[A→B TEXTO] session='.$session->id.' | '.$data['text'].' preferred_name='.($data['preferred_name'] ?? ''));
 
         $existing = Turn::query()
             ->where('session_id', $session->id)
@@ -942,6 +944,32 @@ class EmpathiaController extends Controller
         $v = strtr($v, $map);
 
         return preg_replace('/\s+/', ' ', $v) ?? '';
+    }
+
+    private function normalizePreferredName(mixed $value): ?string
+    {
+        $name = trim((string) $value);
+        if ($name === '') {
+            return null;
+        }
+
+        // Quitar caracteres raros; C solo usa letras / ' / -
+        $name = preg_replace("/[^\\p{L}'\\- ]+/u", '', $name) ?? '';
+        $name = trim(preg_replace('/\s+/', ' ', $name) ?? '');
+        if ($name === '') {
+            return null;
+        }
+
+        $parts = preg_split('/\s+/', $name) ?: [];
+        if (count($parts) > 2) {
+            $name = $parts[0].' '.$parts[1];
+        }
+
+        if (mb_strlen($name) > 40) {
+            $name = mb_substr($name, 0, 40);
+        }
+
+        return $name !== '' ? $name : null;
     }
 
     private function console(string $message): void
