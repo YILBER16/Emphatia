@@ -51,7 +51,17 @@ def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict) -
 def read_json(handler: BaseHTTPRequestHandler) -> dict:
     length = int(handler.headers.get("Content-Length", "0"))
     raw = handler.rfile.read(length) if length else b"{}"
-    return json.loads(raw.decode("utf-8") or "{}")
+    try:
+        decoded = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        decoded = raw.decode("utf-8", errors="replace")
+        print("[C] JSON recibido con codificación inválida; se sustituyeron caracteres", flush=True)
+    try:
+        payload = json.loads(decoded or "{}")
+    except json.JSONDecodeError as error:
+        print(f"[C] JSON inválido: {error}", flush=True)
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def authorized(handler: BaseHTTPRequestHandler) -> bool:
@@ -91,10 +101,45 @@ def sanitize_preferred_name(value: object) -> str:
 
 
 def extract_preferred_name(student_text: str) -> str:
-    match = re.search(r"\bme llamo\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ'\- ]{1,40})", student_text, re.IGNORECASE)
+    match = re.search(
+        r"\b(?:me llamo|quiero que me llames|llámame|llamame)\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ'\- ]{1,40})",
+        student_text,
+        re.IGNORECASE,
+    )
     if not match:
         return ""
     return sanitize_preferred_name(match.group(1).strip(" .,!?:;"))
+
+
+def preferred_name_from_history(history: list[dict]) -> str:
+    for item in reversed(history):
+        if item.get("speaker") != "usuario":
+            continue
+        name = extract_preferred_name(str(item.get("text", "")))
+        if name:
+            return name
+    return ""
+
+
+def last_user_message(history: list[dict]) -> str:
+    for item in reversed(history):
+        if item.get("speaker") == "usuario" and item.get("text"):
+            return str(item["text"])
+    return ""
+
+
+def conversation_bridge(history: list[dict]) -> str:
+    previous = last_user_message(history)
+    if not previous:
+        return ""
+    return f"Antes me contaste: «{previous}»."
+
+
+def clean_message_excerpt(message: str, limit: int = 180) -> str:
+    compact = " ".join(message.strip().split())
+    if len(compact) <= limit:
+        return compact
+    return compact[: limit - 3].rstrip() + "..."
 
 
 def conversation_memory_path(session_id: object) -> Path:
@@ -119,7 +164,7 @@ def save_conversation_memory(session_id: object, history: list[dict]) -> bool:
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary_path = path.with_suffix(".tmp")
         temporary_path.write_text(
-            json.dumps(history, ensure_ascii=False, indent=2),
+            json.dumps(annotate_memory_history(history), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
         temporary_path.replace(path)
@@ -133,15 +178,44 @@ def prompt_history(history: list[dict]) -> list[dict]:
     return history[-(MEMORY_PROMPT_TURNS * 2):]
 
 
+def annotate_memory_history(history: list[dict]) -> list[dict]:
+    annotated = []
+    turn_number = 0
+    for item in history:
+        if not isinstance(item, dict) or not item.get("text"):
+            continue
+        speaker = item.get("speaker", "usuario")
+        if speaker == "usuario":
+            turn_number += 1
+        annotated.append({
+            "turn": item.get("turn", turn_number),
+            "speaker": speaker,
+            "text": str(item["text"]),
+        })
+    return annotated
+
+
+def remembered_context(history: list[dict]) -> str:
+    """Return a compact reminder from older turns for long conversations."""
+    user_messages = [
+        str(item["text"])
+        for item in history
+        if item.get("speaker") == "usuario" and item.get("text")
+    ]
+    if len(user_messages) <= MEMORY_PROMPT_TURNS:
+        return ""
+    return " | ".join(user_messages[:-MEMORY_PROMPT_TURNS][-3:])
+
+
 def merge_conversation_history(stored_history: list[dict], request_history: list[dict]) -> list[dict]:
     """Keep C's full session memory while accepting newer context from B."""
     stored = [
-        {"speaker": item.get("speaker", "usuario"), "text": str(item["text"])}
+        {"turn": item.get("turn"), "speaker": item.get("speaker", "usuario"), "text": str(item["text"])}
         for item in stored_history
         if isinstance(item, dict) and item.get("text")
     ]
     requested = [
-        {"speaker": item.get("speaker", "usuario"), "text": str(item["text"])}
+        {"turn": item.get("turn"), "speaker": item.get("speaker", "usuario"), "text": str(item["text"])}
         for item in request_history
         if isinstance(item, dict) and item.get("text")
     ]
@@ -204,11 +278,13 @@ def infer_emotion(student_text: str) -> tuple[str, float]:
     emotion_signals = {
         "anxiety": (
             "ansioso", "ansiosa", "ansiedad", "preocupado", "preocupada",
-            "nervioso", "nerviosa", "no puedo dejar de pensar", "me desborda",
+            "nervioso", "nerviosa", "estresado", "estresada", "estres",
+            "no puedo dejar de pensar", "me desborda",
         ),
         "sadness": (
             "triste", "llorar", "lloro", "deprimido", "deprimida", "sin ganas",
-            "me siento vacio", "me siento vacia", "me duele mucho",
+            "depresion", "depresin", "desmotivado", "desmotivada", "no quiero salir",
+            "no quiero hacer nada", "me siento vacio", "me siento vacia", "me duele mucho",
         ),
         "anger": (
             "enojado", "enojada", "enojo", "ira", "rabia", "furioso", "furiosa",
@@ -258,6 +334,10 @@ def detect_risk_signals(student_text: str) -> tuple[list[dict], str]:
         "no encuentro salida",
         "me siento atrapado",
         "me siento atrapada",
+        "no quiero salir",
+        "no quiero hacer nada",
+        "estoy desmotivado",
+        "estoy desmotivada",
     )
     for severity, terms in (("high", high_terms), ("medium", medium_terms), ("emergency", emergency_terms)):
         for term in terms:
@@ -281,7 +361,12 @@ def build_contextual_reply(
     conversation_history: list[dict],
 ) -> str:
     """Build a response around the user's actual message and conversation state."""
-    text = student_text.lower()
+    text = " ".join(
+        unicodedata.normalize("NFKD", student_text.lower())
+        .encode("ascii", "ignore")
+        .decode("ascii")
+        .split()
+    )
     greeting = f"{preferred_name}, " if preferred_name else ""
     has_history = any(item.get("speaker") == "usuario" for item in conversation_history)
 
@@ -296,7 +381,7 @@ def build_contextual_reply(
             f"{greeting}gracias por confiarme algo tan importante. No tienes que afrontar esto a solas; "
             "busquemos a una persona adulta que pueda acompañarte hoy. ¿A quién podrías avisarle ahora?"
         )
-    if "me llamo" in text:
+    if extract_preferred_name(student_text):
         return (
             f"Mucho gusto, {preferred_name or 'gracias por decírmelo'}. Quiero conocerte a tu ritmo y "
             "escuchar lo que hoy te resulte más importante. ¿Qué te gustaría contarme primero?"
@@ -325,6 +410,24 @@ def build_contextual_reply(
             "Podemos quedarnos con lo que te ayudó y pensar cómo repetirlo cuando vuelva la preocupación. "
             "¿Qué cambió dentro de ti o a tu alrededor para sentirte así?"
         )
+    if emotion_label == "sadness" and has_history and risk_level == "medium":
+        bridge = conversation_bridge(conversation_history)
+        current = clean_message_excerpt(student_text)
+        return (
+            f"{greeting}te estoy escuchando. {bridge} Ahora me dices «{current}». "
+            "Suena a que la ruptura no solo te puso triste, sino que también te está quitando energía "
+            "para salir y hacer cosas. No quiero asumir cómo te encuentras: ¿estás a salvo ahora mismo "
+            "y has pensado en hacerte daño?"
+        )
+    if emotion_label == "sadness" and has_history:
+        bridge = conversation_bridge(conversation_history)
+        current = clean_message_excerpt(student_text)
+        return (
+            f"{greeting}te estoy escuchando. {bridge} Ahora también me dices «{current}». "
+            "Una infidelidad y el final de una relación pueden dejar mucha tristeza, "
+            "aislamiento y preguntas difíciles; no tienes que resolverlo todo de una vez. "
+            "¿Qué te está pesando más ahora: la traición, la soledad o no saber cómo volver a empezar?"
+        )
     if emotion_label == "sadness":
         return (
             f"{greeting}puedo notar que esto te está doliendo, y tiene sentido que necesites espacio para "
@@ -343,13 +446,17 @@ def build_contextual_reply(
             "para ti y acompañarte también en los momentos que te hacen bien. ¿Qué fue lo mejor de hoy?"
         )
     if has_history:
+        bridge = conversation_bridge(conversation_history)
+        current = clean_message_excerpt(student_text)
         return (
-            f"{greeting}gracias por seguir compartiendo esto conmigo. Tomo en cuenta lo que ya me contaste y "
-            "podemos avanzar desde ahí, sin apresurarte. ¿Qué aspecto te gustaría mirar con más calma?"
+            f"{greeting}te estoy siguiendo. {bridge} Ahora me dices «{current}». "
+            "Quiero entender qué cambió y qué relación tiene con lo que veníamos hablando, sin asumir por ti. "
+            "¿Qué parte de lo que acabas de contar te gustaría explorar primero?"
         )
+    current = clean_message_excerpt(student_text)
     return (
-        f"{greeting}gracias por confiarme esto. Quiero comprender qué significa para ti, no responderte con "
-        "una frase automática. ¿Qué fue lo primero que sentiste cuando ocurrió?"
+        f"{greeting}gracias por confiarme esto. Escucho que dices «{current}» y quiero comprender qué significa "
+        "para ti, no responderte con una frase automática. ¿Qué fue lo más importante de ese momento?"
     )
 
 
@@ -627,10 +734,18 @@ class Handler(BaseHTTPRequestHandler):
             stored_history = load_conversation_memory(body.get("session_id"))
             full_history = merge_conversation_history(stored_history, request_history)
             conversation_history = prompt_history(full_history)
+            older_context = remembered_context(full_history)
+            if older_context:
+                conversation_history = [
+                    {"speaker": "memoria", "text": f"Temas anteriores recordados: {older_context}"},
+                    *conversation_history,
+                ]
             risk_level = body.get("risk_level") if isinstance(body.get("risk_level"), str) else "low"
             preferred_name = sanitize_preferred_name(body.get("preferred_name"))
             if not preferred_name and student_text:
                 preferred_name = extract_preferred_name(student_text)
+            if not preferred_name:
+                preferred_name = preferred_name_from_history(full_history)
             if student_text and not emotion_label:
                 emotion_label, emotion_confidence = infer_emotion(student_text)
             risk_signals, detected_risk_level = detect_risk_signals(student_text)

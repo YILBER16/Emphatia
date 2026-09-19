@@ -457,6 +457,7 @@ class EmpathiaController extends Controller
         $request->validate([
             'audio' => 'required|file',
             'client_turn_key' => 'required|uuid',
+            'preferred_name' => 'nullable|string|max:40',
             'sequence_hint' => 'sometimes|integer',
         ]);
 
@@ -504,7 +505,7 @@ class EmpathiaController extends Controller
         ]);
 
         try {
-            $orchestrator->processAcceptedTurn($turn, $session, $audioPath);
+            $orchestrator->processAcceptedTurn($turn, $session, $audioPath, $request->input('preferred_name'));
         } catch (\Throwable $e) {
             $turn->status = 'error';
             $turn->save();
@@ -616,6 +617,10 @@ class EmpathiaController extends Controller
             'received_text' => $data['text'],
             'reply_text' => $turn->reply_text,
             'transcript' => $turn->transcript ?? $data['text'],
+            'emotion' => [
+                'label' => $turn->emotion_label,
+                'confidence' => $turn->emotion_confidence,
+            ],
             'turn' => [
                 'id' => $turn->id,
                 'session_id' => $turn->session_id,
