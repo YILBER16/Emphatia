@@ -9,6 +9,7 @@ from servidor_simulado import (
     build_contextual_reply,
     conversation_memory_path,
     load_conversation_memory,
+    merge_conversation_history,
     prompt_history,
     purge_conversation_memory,
     save_conversation_memory,
@@ -119,6 +120,33 @@ class RespuestasConversacionTests(unittest.TestCase):
         ]
         self.assertEqual(len(prompt_history(history)), 24)
         self.assertEqual(len(history), 28)
+
+    def test_turn_memory_merges_without_losing_previous_exchanges(self):
+        stored = [
+            {"speaker": "usuario", "text": "Hablamos del examen"},
+            {"speaker": "ia", "text": "Recuerdo esa preocupacion"},
+        ]
+        request = [
+            {"speaker": "usuario", "text": "Hablamos del examen"},
+            {"speaker": "ia", "text": "Recuerdo esa preocupacion"},
+            {"speaker": "usuario", "text": "Ahora quiero hablar de mi familia"},
+        ]
+        merged = merge_conversation_history(stored, request)
+
+        self.assertEqual(len(merged), 3)
+        self.assertEqual(merged[0]["text"], "Hablamos del examen")
+        self.assertEqual(merged[-1]["text"], "Ahora quiero hablar de mi familia")
+
+    def test_repeated_ai_replies_are_kept_as_distinct_turns(self):
+        history = [
+            {"speaker": "usuario", "text": "Primer mensaje"},
+            {"speaker": "ia", "text": "¿Qué necesitas ahora?"},
+            {"speaker": "usuario", "text": "Segundo mensaje"},
+            {"speaker": "ia", "text": "¿Qué necesitas ahora?"},
+        ]
+        merged = merge_conversation_history([], history)
+        self.assertEqual(len(merged), 4)
+        self.assertEqual(merged.count({"speaker": "ia", "text": "¿Qué necesitas ahora?"}), 2)
 
 
 if __name__ == "__main__":

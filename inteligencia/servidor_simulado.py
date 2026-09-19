@@ -133,6 +133,36 @@ def prompt_history(history: list[dict]) -> list[dict]:
     return history[-(MEMORY_PROMPT_TURNS * 2):]
 
 
+def merge_conversation_history(stored_history: list[dict], request_history: list[dict]) -> list[dict]:
+    """Keep C's full session memory while accepting newer context from B."""
+    stored = [
+        {"speaker": item.get("speaker", "usuario"), "text": str(item["text"])}
+        for item in stored_history
+        if isinstance(item, dict) and item.get("text")
+    ]
+    requested = [
+        {"speaker": item.get("speaker", "usuario"), "text": str(item["text"])}
+        for item in request_history
+        if isinstance(item, dict) and item.get("text")
+    ]
+    if not stored:
+        return requested
+    if not requested:
+        return stored
+    if requested[:len(stored)] == stored:
+        return requested
+    if stored[:len(requested)] == requested:
+        return stored
+
+    overlap = 0
+    max_overlap = min(len(stored), len(requested))
+    for size in range(max_overlap, 0, -1):
+        if stored[-size:] == requested[:size]:
+            overlap = size
+            break
+    return stored + requested[overlap:]
+
+
 def purge_conversation_memory(session_id: object) -> bool:
     path = conversation_memory_path(session_id)
     try:
@@ -595,7 +625,8 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(request_history, list):
                 request_history = []
             stored_history = load_conversation_memory(body.get("session_id"))
-            conversation_history = prompt_history(request_history or stored_history)
+            full_history = merge_conversation_history(stored_history, request_history)
+            conversation_history = prompt_history(full_history)
             risk_level = body.get("risk_level") if isinstance(body.get("risk_level"), str) else "low"
             preferred_name = sanitize_preferred_name(body.get("preferred_name"))
             if not preferred_name and student_text:
@@ -671,10 +702,11 @@ class Handler(BaseHTTPRequestHandler):
             prompt_version = active_prompt_name(select_prompt_key(emotion_label, risk_level))
 
             updated_history = [
-                *conversation_history,
+                *full_history,
                 {"speaker": "usuario", "text": student_text},
                 {"speaker": "ia", "text": reply_text},
             ]
+            updated_history = merge_conversation_history([], updated_history)
             memory_updated = save_conversation_memory(body.get("session_id"), updated_history)
             print(
                 f"[C] memoria turnos={len(updated_history) // 2} session={body.get('session_id')} updated={memory_updated}",
