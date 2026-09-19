@@ -13,7 +13,12 @@ class TurnOrchestrator
 {
     public function __construct(private SessionEventBus $events) {}
 
-    public function processTextTurn(Turn $turn, AccompanimentSession $session, string $studentText): void
+    public function processTextTurn(
+        Turn $turn,
+        AccompanimentSession $session,
+        string $studentText,
+        ?string $preferredName = null,
+    ): void
     {
         $this->events->push($session, 'session.state', ['state' => 'processing']);
         $this->events->push($session, 'turn.processing', [
@@ -27,7 +32,7 @@ class TurnOrchestrator
         try {
             $inference = config('empathia.intel_stub')
                 ? $this->stubInference($turn, $session, $studentText)
-                : $this->callIntelligenceText($turn, $session, $studentText);
+                : $this->callIntelligenceText($turn, $session, $studentText, $preferredName);
             if ($studentText !== '') {
                 $inference['transcript']['text'] = $studentText;
             }
@@ -130,7 +135,12 @@ class TurnOrchestrator
         ];
     }
 
-    private function callIntelligenceText(Turn $turn, AccompanimentSession $session, string $studentText): array
+    private function callIntelligenceText(
+        Turn $turn,
+        AccompanimentSession $session,
+        string $studentText,
+        ?string $preferredName = null,
+    ): array
     {
         $base = rtrim((string) config('empathia.intelligence_url'), '/');
         $payload = [
@@ -140,7 +150,11 @@ class TurnOrchestrator
             'student_id' => (string) $session->student_user_id,
             'locale' => 'es',
             'text' => $studentText,
+            'conversation_history' => $this->conversationHistory($session),
         ];
+        if ($preferredName !== null && $preferredName !== '') {
+            $payload['preferred_name'] = $preferredName;
+        }
 
         $response = Http::timeout(120)
             ->connectTimeout(5)
@@ -172,6 +186,7 @@ class TurnOrchestrator
         if ($studentText !== null && $studentText !== '') {
             $payload['text'] = $studentText;
         }
+        $payload['conversation_history'] = $this->conversationHistory($session);
 
         $response = Http::timeout(120)
             ->connectTimeout(5)
@@ -188,6 +203,20 @@ class TurnOrchestrator
     private function console(string $message): void
     {
         file_put_contents('php://stderr', $message.PHP_EOL);
+    }
+
+    private function conversationHistory(AccompanimentSession $session): array
+    {
+        return $session->turns()
+            ->where('status', 'completed')
+            ->orderBy('sequence_no')
+            ->get(['transcript', 'reply_text'])
+            ->flatMap(fn (Turn $turn): array => [
+                ['speaker' => 'usuario', 'text' => (string) $turn->transcript],
+                ['speaker' => 'ia', 'text' => (string) $turn->reply_text],
+            ])
+            ->values()
+            ->all();
     }
 
     private function persistInference(Turn $turn, AccompanimentSession $session, array $inference): void
@@ -222,6 +251,8 @@ class TurnOrchestrator
             'risk_emitted' => count($riskSignals) > 0,
         ])->save();
 
+        $this->updateConversationSummary($session);
+
         foreach ($riskSignals as $signal) {
             $code = $signal['code'] ?? 'OTHER';
             if (! in_array($code, $catalog, true)) {
@@ -242,6 +273,19 @@ class TurnOrchestrator
                 'source' => 'intelligence_v1',
             ]);
         }
+    }
+
+    private function updateConversationSummary(AccompanimentSession $session): void
+    {
+        $turns = $session->turns()
+            ->where('status', 'completed')
+            ->latest('sequence_no')
+            ->get(['sequence_no', 'transcript', 'reply_text', 'emotion_label'])
+            ->sortBy('sequence_no');
+
+        $session->forceFill([
+            'conversation_summary' => ConversationSummaryBuilder::build($turns),
+        ])->save();
     }
 
     private function riskCatalogCodes(): array

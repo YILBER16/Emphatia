@@ -4,7 +4,11 @@
   "title": "InferTurnRequest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["request_id", "session_id", "turn_id", "student_id", "locale", "audio"],
+  "required": ["request_id", "session_id", "turn_id", "student_id", "locale"],
+  "oneOf": [
+    { "required": ["audio"] },
+    { "required": ["text"] }
+  ],
   "properties": {
     "request_id": { "type": "string", "format": "uuid" },
     "session_id": { "type": "string", "format": "uuid" },
@@ -22,6 +26,34 @@
       "required": ["path"],
       "properties": {
         "path": { "type": "string", "minLength": 1 }
+      }
+    },
+    "text": { "type": "string", "minLength": 1 },
+    "emotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string",
+          "enum": ["neutral", "joy", "sadness", "anger", "fear", "anxiety"]
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "risk_level": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "emergency"]
+    },
+    "conversation_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["speaker", "text"],
+        "properties": {
+          "speaker": { "type": "string", "enum": ["usuario", "ia"] },
+          "text": { "type": "string" }
+        }
       }
     },
     "options": {

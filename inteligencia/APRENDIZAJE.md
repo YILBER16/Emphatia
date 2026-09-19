@@ -154,7 +154,7 @@ personales restantes:
 
 ```json
 {
-	"preferred_name": "Sofia"
+	"preferred_name": "Andrea"
 }
 ```
 

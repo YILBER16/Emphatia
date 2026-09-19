@@ -21,6 +21,7 @@ class AccompanimentSession extends Model
         'ws_ticket',
         'started_at',
         'ended_at',
+        'conversation_summary',
     ];
 
     protected function casts(): array

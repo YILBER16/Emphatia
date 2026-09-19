@@ -404,6 +404,30 @@ class EmpathiaController extends Controller
         return response()->json(['session' => $session]);
     }
 
+    public function getSessionSummary(Request $request, string $sessionId)
+    {
+        $session = $this->resolveSession($sessionId);
+        $this->assertCanReadSession($request->user(), $session);
+
+        $turns = $session->turns()
+            ->where('status', 'completed')
+            ->get(['emotion_label']);
+
+        return response()->json([
+            'summary' => [
+                'session_id' => $session->id,
+                'status' => $session->status,
+                'conversation_summary' => $session->conversation_summary,
+                'turn_count' => $turns->count(),
+                'emotions' => $turns->groupBy('emotion_label')->map->count()->filter(
+                    fn (int $count, ?string $label): bool => $label !== null,
+                ),
+                'started_at' => $session->started_at?->toISOString(),
+                'ended_at' => $session->ended_at?->toISOString(),
+            ],
+        ]);
+    }
+
     public function closeSession(Request $request, string $sessionId, SessionEventBus $events)
     {
         $session = $this->resolveSession($sessionId);
@@ -519,6 +543,18 @@ class EmpathiaController extends Controller
         $data = $request->validate([
             'text' => 'required|string|min:1|max:5000',
             'client_turn_key' => 'required|uuid',
+            'preferred_name' => [
+                'nullable',
+                'string',
+                'max:40',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    $normalized = trim((string) $value);
+                    if ($normalized !== '' && (count(preg_split('/\s+/', $normalized)) > 2
+                        || ! preg_match("/^[\\p{L}'\\- ]+$/u", $normalized))) {
+                        $fail('El nombre preferido debe contener una o dos palabras válidas.');
+                    }
+                },
+            ],
         ]);
 
         $this->console('[A→B TEXTO] session='.$session->id.' | '.$data['text']);
@@ -560,7 +596,7 @@ class EmpathiaController extends Controller
         ]);
 
         try {
-            $orchestrator->processTextTurn($turn, $session, $data['text']);
+            $orchestrator->processTextTurn($turn, $session, $data['text'], $data['preferred_name'] ?? null);
         } catch (\Throwable $e) {
             $turn->status = 'error';
             $turn->save();
