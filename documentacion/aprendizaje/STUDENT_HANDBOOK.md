@@ -67,7 +67,7 @@ Al inicio: Planning.
 Al final: Review + checklist.  
 Si no está Done, no fingimos que está Done.
 
-Sprint 0: [missions/sprint-0/](./missions/sprint-0/).
+Sprints: [0](./missions/sprint-0/) · [1](./missions/sprint-1/) · [2](./missions/sprint-2/) · [**3 (actual)**](./missions/sprint-3/).
 
 ---
 

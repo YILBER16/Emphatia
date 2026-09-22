@@ -44,6 +44,19 @@ Nunca con C directo.
 
 Estados escuchando / pensando / hablando + audio + boca básica + error visible.
 
+## Esta semana (Sprint 3) — en simple
+
+Ya tienes login, lista y texto de respuesta. Ahora:
+
+1. **Que se oiga** el audio de respuesta (no solo leerlo).
+2. **Un** movimiento de boca mientras “habla”. No cine.
+
+Tú no le hablas a Nikol directo. Solo a Stid.  
+Si el audio no suena → Stid o Nikol. Si la boca no existe → D / profe.
+
+Mensaje largo: `documentacion/equipo/sprint-3-mensajes.md`  
+Pasos en casa: `documentacion/equipo/sprint-3-tareas-casa.md`
+
 ---
 
 Guía larga: `documentacion/equipo/guia-rol-A-avatar.md`  

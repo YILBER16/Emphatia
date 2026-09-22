@@ -48,3 +48,5 @@ No tienen que entender todo de golpe.
 El proyecto ya tiene base (prueba de humo). No partimos de cero.
 Si se traban: preguntan. Está permitido no saber.
 ```
+
+Sprint 3 (voz, nombre, boca): mensajes listos en [sprint-3-mensajes.md](./sprint-3-mensajes.md).

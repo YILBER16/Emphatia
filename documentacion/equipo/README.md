@@ -12,7 +12,10 @@ La documentación de esta carpeta (`equipo/`) es **técnica / mentor**. No la re
 | [sesion-1-manana.md](./sesion-1-manana.md) | Mentor — guion de la primera reunión |
 | [clase-de-hoy.md](./clase-de-hoy.md) | Clase 1 — instalación + Sprint 0 |
 | [clase-2.md](./clase-2.md) | Clase 2 — Sprint 1 / conectar |
-| [clase-3.md](./clase-3.md) | **Clase 3** — Sprint 2 / primer turno |
+| [clase-3.md](./clase-3.md) | Clase 3 — Sprint 2 / primer turno |
+| [clase-4.md](./clase-4.md) | **Clase 4** — Sprint 3 / voz, nombre y boca |
+| [sprint-3-mensajes.md](./sprint-3-mensajes.md) | WhatsApp / lenguaje simple para el equipo |
+| [sprint-3-tareas-casa.md](./sprint-3-tareas-casa.md) | **Tareas de casa (virtual)** — pasos por rol |
 | [clase-de-manana.md](./clase-de-manana.md) | Borrador previo |
 | [inicio.md](./inicio.md) | Todos — día 0 |
 | [roles.md](./roles.md) | Todos — límites de cada rol (técnico) |

@@ -26,6 +26,19 @@ Definir cómo se mueve la boca/cara y dejar ejemplos claros para Unity.
 
 Explicar qué es un visema y qué morphs le pedirás a A.
 
+## Esta semana (Sprint 3) — en simple
+
+Tú eres el coach de la cara. No programas la IA.
+
+1. Tabla: forma de boca → morph de Unity (Isaac te dice cuáles tiene).
+2. Tres pasos: “cuando esté hablando, Isaac debe…”
+3. Con Isaac, muevan **un** morph. Si el modelo no tiene boca, lo escriben y listo.
+
+Éxito: se nota que habla. No cine.
+
+Mensaje largo: `documentacion/equipo/sprint-3-mensajes.md`  
+Pasos en casa: `documentacion/equipo/sprint-3-tareas-casa.md`
+
 ---
 
 Guía larga: `documentacion/equipo/guia-rol-D-expresion.md`

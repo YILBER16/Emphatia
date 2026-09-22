@@ -9,4 +9,5 @@ Entrega **un archivo por estudiante**.
 | C Inteligencia | [rol-C-inteligencia.md](./rol-C-inteligencia.md) |
 | D Expresión | [rol-D-expresion.md](./rol-D-expresion.md) |
 
-También: `documentacion/equipo/inicio.md` (grupal).
+También: `documentacion/equipo/inicio.md` (grupal).  
+Sprint 3 en simple (copiar a WhatsApp): `documentacion/equipo/sprint-3-mensajes.md`.

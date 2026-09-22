@@ -39,6 +39,19 @@ Documentar login, crear sesión, subir turno, ver eventos, cerrar sesión — en
 - **admin + counselor** listan y hacen `assume`.  
 - Demo API: `.\herramientas\demo-perfiles-estudiante.ps1`
 
+## Esta semana (Sprint 3) — en simple
+
+Tú eres la recepción. Esta semana:
+
+1. Mándale a Nikol **solo** el nombre con el que el niño quiere que lo llamen (ej. Anita). Nada de cédula ni teléfono.
+2. Apaga una vez el modo simulado (`INTEL_STUB=false`) y demuestra que Nikol contesta de verdad.
+3. Tú y Nikol en **el mismo PC** del piloto, si no el audio se pierde.
+
+No hagas WebSockets ni MySQL ahora.
+
+Mensaje largo: `documentacion/equipo/sprint-3-mensajes.md`  
+Pasos en casa: `documentacion/equipo/sprint-3-tareas-casa.md`
+
 ---
 
 Guía larga: `documentacion/equipo/guia-rol-B-servidor.md`  

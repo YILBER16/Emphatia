@@ -7,7 +7,7 @@ Antes de decir “terminé” o abrir un Pull Request, usa la checklist del spri
 | 0 | [sprint-0/](./sprint-0/) |
 | 1 | [sprint-1/](./sprint-1/) |
 | 2 | [sprint-2/](./sprint-2/) |
-| 2 | [sprint-2/](./sprint-2/) |
+| 3 | [sprint-3/](./sprint-3/) |
 
 ## Cómo usarla
 

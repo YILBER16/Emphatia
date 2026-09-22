@@ -45,6 +45,13 @@ Detalle de contratos: `contratos/api-rest/`, `contratos/websocket/`, `contratos/
 
 ## Siguiente paso
 
+Si ya cerraste Sprint 2 (turno con `reply_text`):
+
+1. Lee tu [misión Sprint 3](./missions/sprint-3/).  
+2. Usa tu [checklist](./checklists/sprint-3/).  
+
+Si aún estás en entorno o login:
+
 1. Lee tu [misión Sprint 0](./missions/sprint-0/).  
 2. Usa tu [checklist](./checklists/sprint-0/).  
 3. Cuando necesites profundidad: `documentacion/equipo/guia-rol-X-*.md`.

@@ -93,6 +93,7 @@ namespace Empathia
         TextMeshProUGUI _reply;
         TextMeshProUGUI _transcript;
         TextMeshProUGUI _loginStatus;
+        TextMeshProUGUI _loginHint;
         GameObject _alertModal;
         TextMeshProUGUI _alertTitle;
         TextMeshProUGUI _alertBody;
@@ -467,17 +468,15 @@ namespace Empathia
             _registerPanel.SetActive(false);
 
             _adultLoginPanel = CreateLoginPanel(content.transform, "AdultFields");
-            _user = AddIconInput(_adultLoginPanel.transform, "Adulto (admin1 / orientador1)", "orientador1", "user", false);
+            _user = AddIconInput(_adultLoginPanel.transform, "Usuario del psicoorientador", "orientador1", "user", false);
             _pass = AddIconInput(_adultLoginPanel.transform, "Contraseña", "password", "lock", true);
             _checkBBtn = AddOutlineButton(_adultLoginPanel.transform, "Probar conexión B", 48, OnCheckConnectionB);
             _loginBtn = AddGradientButton(_adultLoginPanel.transform, "Iniciar sesión", 58, OnLogin);
 
             _registerBtn = AddOutlineButton(content.transform, "Registrarse", 62, OnRegister);
-            AddLabel(content.transform, "La lista muestra solo el nombre. Al entrar usa todos los datos del perfil.", 16, FontStyles.Normal, Muted, 36, TextAlignmentOptions.Center);
+            _loginHint = AddLabel(content.transform, "La lista muestra solo el nombre. Al entrar usa todos los datos del perfil.", 16, FontStyles.Normal, Muted, 36, TextAlignmentOptions.Center);
             _loginStatus = AddLabel(content.transform, "", 14, FontStyles.Normal, Muted, 24, TextAlignmentOptions.Center);
-            if (_adultLoginPanel != null)
-                _adultLoginPanel.SetActive(false);
-            SetLoginStatus("Escribe tus datos escolares y pulsa Ingresar.");
+            ShowStaffLogin(true);
         }
 
         GameObject CreateLoginPanel(Transform parent, string name)
@@ -497,8 +496,37 @@ namespace Empathia
             return go;
         }
 
+        void ShowStaffLogin(bool showStaff)
+        {
+            if (_adultLoginPanel != null)
+                _adultLoginPanel.SetActive(showStaff);
+            if (_loginHint != null)
+                _loginHint.gameObject.SetActive(!showStaff);
+
+            if (showStaff)
+            {
+                if (_studentLoginPanel != null)
+                    _studentLoginPanel.SetActive(false);
+                if (_registerPanel != null)
+                    _registerPanel.SetActive(false);
+                if (_registerBtn != null)
+                    _registerBtn.gameObject.SetActive(false);
+                SetLoginStatus("Inicia sesión del psicoorientador.");
+                return;
+            }
+
+            ShowRegisterForm(false);
+        }
+
         void OnRegister()
         {
+            if (string.IsNullOrEmpty(EmpathiaAuthState.AdultToken))
+            {
+                ShowAlertModal("Falta el ingreso", "Primero inicia sesión como psicoorientador.");
+                ShowStaffLogin(true);
+                return;
+            }
+
             ShowRegisterForm(true);
         }
 
@@ -582,7 +610,7 @@ namespace Empathia
         {
             if (_busy) return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://192.168.1.31:8000/api/v1"
+                ? "http://127.0.0.1:8000/api/v1"
                 : _baseUrl.text.Trim();
 
             var documento = _regDoc != null ? _regDoc.text.Trim() : "";
@@ -685,7 +713,7 @@ namespace Empathia
             var ok = false;
             var msg = "";
             StudentListItem[] items = null;
-            yield return _api.ListDirectoryStudents((success, message, data) =>
+            yield return _api.ListStudents((success, message, data) =>
             {
                 ok = success;
                 msg = message;
@@ -745,7 +773,7 @@ namespace Empathia
         {
             if (_busy) return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://192.168.1.31:8000/api/v1"
+                ? "http://127.0.0.1:8000/api/v1"
                 : _baseUrl.text.Trim();
             StartCoroutine(CheckConnectionToB(silent: false));
         }
@@ -767,10 +795,11 @@ namespace Empathia
             SetBusy(false);
             if (ok)
             {
-                SetLoginStatus("");
                 Debug.Log("[Empathia] " + msg);
-                if (!silent)
+                if (!silent && !string.IsNullOrEmpty(EmpathiaAuthState.AdultToken))
                     yield return LoadDirectoryList();
+                else if (!silent)
+                    SetLoginStatus("Conexión OK. Inicia sesión del psicoorientador.");
             }
             else
             {
@@ -1211,7 +1240,7 @@ namespace Empathia
             t.fontStyle = style;
             t.color = color;
             t.alignment = align;
-            t.enableWordWrapping = true;
+            t.textWrappingMode = TextWrappingModes.Normal;
             t.raycastTarget = false;
             var le = go.GetComponent<LayoutElement>();
             le.preferredHeight = height;
@@ -1266,7 +1295,7 @@ namespace Empathia
             text.fontSize = 20;
             text.color = Navy;
             text.alignment = TextAlignmentOptions.MidlineLeft;
-            text.enableWordWrapping = false;
+            text.textWrappingMode = TextWrappingModes.NoWrap;
             text.overflowMode = TextOverflowModes.Ellipsis;
             text.richText = false;
             StretchFull(text.rectTransform);
@@ -1374,7 +1403,7 @@ namespace Empathia
             caption.fontSize = 20;
             caption.color = Navy;
             caption.alignment = TextAlignmentOptions.MidlineLeft;
-            caption.enableWordWrapping = false;
+            caption.textWrappingMode = TextWrappingModes.NoWrap;
             caption.overflowMode = TextOverflowModes.Ellipsis;
             caption.raycastTarget = false;
             StretchFull(caption.rectTransform);
@@ -1459,7 +1488,7 @@ namespace Empathia
             itemLabel.fontSize = 20;
             itemLabel.color = Navy;
             itemLabel.alignment = TextAlignmentOptions.MidlineLeft;
-            itemLabel.enableWordWrapping = false;
+            itemLabel.textWrappingMode = TextWrappingModes.NoWrap;
             itemLabel.overflowMode = TextOverflowModes.Ellipsis;
             itemLabel.raycastTarget = false;
             StretchFull(itemLabel.rectTransform);
@@ -1558,7 +1587,7 @@ namespace Empathia
             text.fontSize = 13;
             text.color = Navy;
             text.alignment = TextAlignmentOptions.MidlineLeft;
-            text.enableWordWrapping = false;
+            text.textWrappingMode = TextWrappingModes.NoWrap;
             StretchFull(text.rectTransform);
 
             var phGo = new GameObject("Placeholder", typeof(RectTransform), typeof(TextMeshProUGUI));
@@ -1702,7 +1731,7 @@ namespace Empathia
         {
             if (_busy) return;
             EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://192.168.1.31:8000/api/v1"
+                ? "http://127.0.0.1:8000/api/v1"
                 : _baseUrl.text.Trim();
 
             SetBusy(true);
@@ -1715,9 +1744,8 @@ namespace Empathia
                     Debug.Log("[Empathia] " + msg);
                     if (EmpathiaAuthState.IsAdultStaff)
                     {
-                        SetLoginStatus("Login adulto OK. Elige un estudiante.");
-                        ShowScreen(UiScreen.PickStudent);
-                        StartCoroutine(LoadStudentList());
+                        ShowStaffLogin(false);
+                        SetLoginStatus("Sesión lista. Elige un perfil o regístralo.");
                     }
                     else
                     {

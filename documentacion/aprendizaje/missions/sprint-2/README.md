@@ -56,3 +56,5 @@ A graba/envía audio → B acepta turno → (stub C) → events turn.result
 ## Por qué este orden (arquitectura)
 
 El [PROJECT_MAP](../../PROJECT_MAP.md) pide el flujo de turno completo. Login ya existe; el cuello de botella siguiente es **el turno**. Expresión e InferTurn avanzan en paralelo para no bloquearse.
+
+Siguiente: [Sprint 3 — voz, nombre y boca](../sprint-3/).

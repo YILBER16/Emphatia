@@ -28,4 +28,5 @@ Usar siempre: [_PLANTILLA_MISION.md](./_PLANTILLA_MISION.md)
 | 0 | [sprint-0/](./sprint-0/) | Solo entorno / “enciende” |
 | 1 | [sprint-1/](./sprint-1/) | Conectar: login, API docs, InferTurn stub, morphs |
 | 2 | [sprint-2/](./sprint-2/) | Primer turno: audio → result → TTS (+ expresión mínima) |
-| 3+ | (próximos) | IA real por etapas, lip-sync fino, WS |
+| 3 | [sprint-3/](./sprint-3/) | Cerrar circuito: voz de C, nombre preferido, 1 morph |
+| 4+ | (próximos) | Lip-sync fino, WS, memoria, MySQL |

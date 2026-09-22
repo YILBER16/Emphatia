@@ -13,7 +13,9 @@ Esta carpeta no reemplaza la documentación técnica: te guía para trabajar com
 | 4 | [METODOLOGIA_EQUIPO.md](./METODOLOGIA_EQUIPO.md) | Cómo funciona la “mini-empresa” |
 | 5 | [missions/sprint-0/](./missions/sprint-0/) | Primera misión (solo entorno) |
 | 6 | [missions/sprint-1/](./missions/sprint-1/) | Segunda: conectar piezas EmpathIA |
-| 7 | [checklists/](./checklists/) | Validar antes de decir “terminé” |
+| 7 | [missions/sprint-2/](./missions/sprint-2/) | Tercera: primer turno |
+| 8 | [missions/sprint-3/](./missions/sprint-3/) | Cuarta: voz, nombre y boca |
+| 9 | [checklists/](./checklists/) | Validar antes de decir “terminé” |
 
 ## Mapa de capas del proyecto
 

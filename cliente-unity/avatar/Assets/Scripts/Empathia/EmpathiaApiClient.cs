@@ -162,24 +162,13 @@ namespace Empathia
                 yield break;
             }
 
-            EmpathiaAuthState.SelectedStudent = item;
-
-            string adminToken = null;
-            yield return LoginAsAdmin((ok, msg, token) =>
+            if (string.IsNullOrEmpty(EmpathiaAuthState.AdultToken))
             {
-                if (!ok)
-                {
-                    onDone(false, msg);
-                    return;
-                }
-
-                adminToken = token;
-            });
-
-            if (string.IsNullOrEmpty(adminToken))
+                onDone(false, "Primero inicia sesión como psicoorientador.");
                 yield break;
+            }
 
-            EmpathiaAuthState.AdultToken = adminToken;
+            EmpathiaAuthState.SelectedStudent = item;
             yield return AssumeStudent(item.UserId, (ok, msg) =>
             {
                 if (ok)
@@ -200,38 +189,12 @@ namespace Empathia
             string acudienteDocumento,
             Action<bool, string> onDone)
         {
-            string adminToken = null;
-            var loginBody = JsonUtility.ToJson(new LoginRequest
-            {
-                username = "admin1",
-                password = "password",
-            });
-
-            yield return SendJson(
-                "POST",
-                EmpathiaAuthState.BaseUrl.TrimEnd('/') + "/auth/login",
-                loginBody,
-                bearer: null,
-                (ok, code, text) =>
-                {
-                    if (!ok)
-                    {
-                        onDone(false, MapError(code, text, "No se pudo abrir el registro. Enciende B e intenta de nuevo."));
-                        return;
-                    }
-
-                    var parsed = JsonUtility.FromJson<LoginResponse>(text);
-                    if (parsed == null || string.IsNullOrEmpty(parsed.token))
-                    {
-                        onDone(false, "B no devolvió permiso de registro.");
-                        return;
-                    }
-
-                    adminToken = parsed.token;
-                });
-
+            var adminToken = EmpathiaAuthState.AdultToken;
             if (string.IsNullOrEmpty(adminToken))
+            {
+                onDone(false, "Primero inicia sesión como psicoorientador.");
                 yield break;
+            }
 
             var body = new AdminStudentCreateRequest
             {
@@ -1218,7 +1181,7 @@ namespace Empathia
             {
                 return "No se pudo conectar al servidor B en "
                        + EmpathiaAuthState.BaseUrl
-                       + ". Enciende B o corrige el campo Servidor. Lab B: http://192.168.1.31:8000/api/v1";
+                       + ". Enciende B o corrige el campo Servidor. En este PC: http://127.0.0.1:8000/api/v1";
             }
 
             var code = ExtractErrorCode(bodyOrNetwork);

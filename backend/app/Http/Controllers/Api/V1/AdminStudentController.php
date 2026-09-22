@@ -42,7 +42,7 @@ class AdminStudentController extends Controller
     public function store(Request $request)
     {
         $admin = $request->user();
-        $this->assertAdmin($admin);
+        $this->assertCanCreateStudent($admin);
 
         // Alias que usa A / formularios simples.
         if ($request->filled('documento') && ! $request->filled('documento_numero')) {
@@ -244,6 +244,13 @@ class AdminStudentController extends Controller
     {
         if ($user->role !== 'admin') {
             abort(response()->json(['error' => ['code' => 'FORBIDDEN', 'message' => 'Only admin can manage student profiles']], 403));
+        }
+    }
+
+    private function assertCanCreateStudent(User $user): void
+    {
+        if (! in_array($user->role, ['admin', 'counselor'], true)) {
+            abort(response()->json(['error' => ['code' => 'FORBIDDEN', 'message' => 'Only staff can create student profiles']], 403));
         }
     }
 
