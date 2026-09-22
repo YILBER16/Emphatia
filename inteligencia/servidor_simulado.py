@@ -11,12 +11,18 @@ import json
 import os
 import re
 import shutil
+import sys
 import time
 import unicodedata
 import uuid
+import wave
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+
+# Avoid crashes when stdout/stderr are redirected to a non-UTF-8 stream (e.g. Windows cp1252).
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 HOST = os.environ.get("INTEL_HOST", "0.0.0.0")
 PORT = int(os.environ.get("INTEL_PORT", "8100"))
@@ -35,8 +41,15 @@ PROMPTS_REGISTRY = PROMPTS_ROOT / "registry.json"
 FIXTURE_EXPRESSION = REPO_ROOT / "expresion" / "fixtures" / "paquete-expresion-ejemplo.json"
 SILENT_WAV = Path(__file__).resolve().parent / "fixtures" / "silent.wav"
 STUB_TRANSCRIPT_TEXT = "Hola, hoy me siento un poco cansado pero quiero hablar."
+PIPER_TTS_ENABLED = os.environ.get("PIPER_TTS_ENABLED", "true").lower() in {"1", "true", "yes"}
+PIPER_VOICE_NAME = os.environ.get("PIPER_VOICE_NAME", "es_ES-davefx-medium")
+PIPER_VOICES_DIR = Path(os.environ.get("PIPER_VOICES_DIR", str(Path(__file__).resolve().parent / "tts" / "voices")))
+PIPER_LENGTH_SCALE = float(os.environ.get("PIPER_LENGTH_SCALE", "1.05"))
+PIPER_NOISE_SCALE = float(os.environ.get("PIPER_NOISE_SCALE", "0.667"))
+PIPER_NOISE_W = float(os.environ.get("PIPER_NOISE_W", "0.8"))
 _WHISPER_MODEL = None
 _WHISPER_MODEL_CONFIG = None
+_PIPER_VOICE = None
 
 
 def json_response(handler: BaseHTTPRequestHandler, status: int, payload: dict) -> None:
@@ -632,6 +645,49 @@ def infer_transcript(audio_path: str | None) -> tuple[dict, str, int]:
         return fallback, "stub-whisper", 50
 
 
+def _get_piper_voice():
+    global _PIPER_VOICE
+
+    if _PIPER_VOICE is not None:
+        return _PIPER_VOICE
+
+    model_path = PIPER_VOICES_DIR / f"{PIPER_VOICE_NAME}.onnx"
+    if not model_path.exists():
+        raise RuntimeError(f"PIPER_VOICE_NOT_FOUND: {model_path}")
+
+    from piper import PiperVoice
+
+    _PIPER_VOICE = PiperVoice.load(str(model_path))
+    return _PIPER_VOICE
+
+
+def synthesize_speech(text: str, out_path: Path) -> tuple[str, int]:
+    """Renders `text` to `out_path` with Piper. Falls back to silence on failure."""
+    started = time.perf_counter()
+    if PIPER_TTS_ENABLED and text.strip():
+        try:
+            voice = _get_piper_voice()
+            with wave.open(str(out_path), "wb") as wav_file:
+                voice.synthesize_wav(
+                    text,
+                    wav_file,
+                    length_scale=PIPER_LENGTH_SCALE,
+                    noise_scale=PIPER_NOISE_SCALE,
+                    noise_w=PIPER_NOISE_W,
+                )
+            elapsed_ms = max(1, int((time.perf_counter() - started) * 1000))
+            return f"piper:{PIPER_VOICE_NAME}", elapsed_ms
+        except Exception as exc:
+            print(f"[C] piper TTS fallback: {exc}", flush=True)
+
+    if SILENT_WAV.exists():
+        shutil.copyfile(SILENT_WAV, out_path)
+    else:
+        out_path.write_bytes(_minimal_wav())
+    elapsed_ms = max(1, int((time.perf_counter() - started) * 1000))
+    return "stub-silence", elapsed_ms
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args) -> None:
         print(f"[intelligence-stub] {self.address_string()} {fmt % args}")
@@ -831,10 +887,7 @@ class Handler(BaseHTTPRequestHandler):
             out_dir = DATA_ROOT / "audio" / "output" / str(body.get("session_id", "session"))
             out_dir.mkdir(parents=True, exist_ok=True)
             out_path = out_dir / f"{turn_id}.wav"
-            if SILENT_WAV.exists():
-                shutil.copyfile(SILENT_WAV, out_path)
-            else:
-                out_path.write_bytes(_minimal_wav())
+            tts_version, tts_ms = synthesize_speech(reply_text, out_path)
 
             expression = {}
             if FIXTURE_EXPRESSION.exists():
@@ -848,7 +901,6 @@ class Handler(BaseHTTPRequestHandler):
             ]
 
             analysis_ms = 20
-            tts_ms = 40
             total_ms = stt_ms + analysis_ms + llm_ms + tts_ms
 
             payload = {
@@ -872,7 +924,7 @@ class Handler(BaseHTTPRequestHandler):
                     "stt": stt_version,
                     "llm": llm_version,
                     "prompt": prompt_version,
-                    "tts": "stub-kokoro",
+                    "tts": tts_version,
                 },
                 "metrics": {
                     "stt_ms": stt_ms,
