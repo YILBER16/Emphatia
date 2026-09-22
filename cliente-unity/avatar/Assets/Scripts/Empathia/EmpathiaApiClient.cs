@@ -78,7 +78,7 @@ namespace Empathia
                     EmpathiaAuthState.AdultToken = null;
                     EmpathiaAuthState.StudentUserId = null;
                     EmpathiaAuthState.StudentDisplayName = parsed.user != null ? parsed.user.display_name : null;
-                    EmpathiaAuthState.PreferredName = EmpathiaAuthState.StudentDisplayName;
+                    EmpathiaAuthState.SetPreferredName(EmpathiaAuthState.StudentDisplayName);
                     if (EmpathiaAuthState.IsAdultStaff)
                         EmpathiaAuthState.AdultToken = parsed.token;
                     EmpathiaAuthState.ClearSessionMemory();
@@ -319,6 +319,10 @@ namespace Empathia
                         ? parsed.profile.nombre_preferencia
                         : (parsed.user != null ? parsed.user.display_name : nombre);
                     EmpathiaAuthState.Username = EmpathiaAuthState.StudentDisplayName;
+                    EmpathiaAuthState.SetPreferredName(
+                        !string.IsNullOrWhiteSpace(nombre)
+                            ? nombre
+                            : EmpathiaAuthState.StudentDisplayName);
                     EmpathiaAuthState.ClearSessionMemory();
                     onDone(true, "Ingreso estudiante OK: " + EmpathiaAuthState.StudentDisplayName);
                 });
@@ -399,7 +403,13 @@ namespace Empathia
                     EmpathiaAuthState.StudentDisplayName = parsed.profile != null && !string.IsNullOrEmpty(parsed.profile.nombre_preferencia)
                         ? parsed.profile.nombre_preferencia
                         : (parsed.user != null ? parsed.user.display_name : studentUserId);
-                    EmpathiaAuthState.PreferredName = EmpathiaAuthState.StudentDisplayName;
+                    var preferFromList = EmpathiaAuthState.SelectedStudent != null
+                        ? EmpathiaAuthState.SelectedStudent.nombres
+                        : null;
+                    EmpathiaAuthState.SetPreferredName(
+                        !string.IsNullOrWhiteSpace(preferFromList)
+                            ? preferFromList
+                            : EmpathiaAuthState.StudentDisplayName);
                     EmpathiaAuthState.Username = EmpathiaAuthState.StudentDisplayName;
                     EmpathiaAuthState.ClearSessionMemory();
                     onDone(true, "Estudiante listo: " + EmpathiaAuthState.StudentDisplayName);
@@ -700,7 +710,8 @@ namespace Empathia
                 text = message.Trim(),
                 message = message.Trim(),
                 client_turn_key = turnKey,
-                preferred_name = EmpathiaAuthState.PreferredName,
+                preferred_name = EmpathiaAuthState.NormalizePreferredName(
+                    EmpathiaAuthState.PreferredName ?? EmpathiaAuthState.StudentDisplayName),
             };
 
             Debug.Log("[Empathia] POST " + url + " | key=" + turnKey + " | " + message.Trim());
@@ -765,7 +776,8 @@ namespace Empathia
                 text = message.Trim(),
                 message = message.Trim(),
                 client_turn_key = turnKey,
-                preferred_name = EmpathiaAuthState.PreferredName,
+                preferred_name = EmpathiaAuthState.NormalizePreferredName(
+                    EmpathiaAuthState.PreferredName ?? EmpathiaAuthState.StudentDisplayName),
             };
 
             Debug.Log("[Empathia] POST " + url + " | key=" + turnKey + " | " + message.Trim());
@@ -977,7 +989,12 @@ namespace Empathia
                 yield break;
             }
 
-            onDone(true, result, result.IsError ? "turn.error" : "turn.result OK");
+            onDone(
+                true,
+                result,
+                result.IsError
+                    ? MapTurnError(result.ErrorCode, result.ErrorMessage)
+                    : "turn.result OK");
         }
 
         public IEnumerator DownloadAndPlayTts(string ttsUrl, AudioSource audioSource, Action<bool, string> onDone)

@@ -2000,9 +2000,13 @@ namespace Empathia
             }
             else
             {
+                var detail = turn != null && turn.IsError
+                    ? EmpathiaApiClient.MapTurnError(turn.ErrorCode, turn.ErrorMessage)
+                    : (string.IsNullOrWhiteSpace(pollMsg) ? "sin turn.result" : pollMsg);
                 SetReply("(sin respuesta)");
-                SetStatus("Texto enviado, pero sin turn.result: " + pollMsg);
-                Debug.LogWarning("[Empathia] " + pollMsg);
+                SetStatus(detail);
+                Debug.LogWarning("[Empathia] " + detail);
+                ShowAlertModal("No se pudo responder", detail);
                 SetBusy(false);
                 SetState("idle");
                 yield break;
