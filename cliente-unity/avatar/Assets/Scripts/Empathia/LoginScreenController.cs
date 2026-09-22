@@ -44,11 +44,13 @@ namespace Empathia
             DontDestroyOnLoad(go);
             go.AddComponent<EmpathiaApiClient>();
             go.AddComponent<AudioSource>();
+            go.AddComponent<EmpathiaMouthDriver>();
             go.AddComponent<LoginScreenController>();
         }
 
         EmpathiaApiClient _api;
         AudioSource _audio;
+        EmpathiaMouthDriver _mouth;
         TMP_FontAsset _tmpFont;
         Sprite _roundLg;
         Sprite _roundSm;
@@ -125,6 +127,14 @@ namespace Empathia
             {
                 _api = GetComponent<EmpathiaApiClient>() ?? gameObject.AddComponent<EmpathiaApiClient>();
                 _audio = GetComponent<AudioSource>() ?? gameObject.AddComponent<AudioSource>();
+                _audio.playOnAwake = false;
+                _audio.loop = false;
+                _audio.mute = false;
+                _audio.volume = 1f;
+                _audio.spatialBlend = 0f;
+                if (FindAnyObjectByType<AudioListener>() == null)
+                    gameObject.AddComponent<AudioListener>();
+                _mouth = GetComponent<EmpathiaMouthDriver>() ?? gameObject.AddComponent<EmpathiaMouthDriver>();
                 EnsureEventSystem();
                 ApplyDisplayQuality();
                 BuildUi();
@@ -921,6 +931,7 @@ namespace Empathia
             v.childForceExpandHeight = false;
 
             AddLabel(content.transform, "Pestaña Salud", 13, FontStyles.Bold, Purple, 18, TextAlignmentOptions.Center);
+            BindMouthHint(content.transform);
             _welcomeTitle = AddLabel(content.transform, "¡Bienvenido!", 34, FontStyles.Bold, Navy, 44, TextAlignmentOptions.Center);
             _welcomeSub = AddLabel(content.transform, "Este es tu espacio de acompañamiento emocional.", 16, FontStyles.Normal, Muted, 28, TextAlignmentOptions.Center);
             _recordHint = AddLabel(content.transform, "Grabar = tu voz → texto local → B", 14, FontStyles.Normal, Muted, 24, TextAlignmentOptions.Center);
@@ -940,6 +951,24 @@ namespace Empathia
             _reply = AddLabel(content.transform, "Respuesta EmpathIA: (sin respuesta)", 13, FontStyles.Normal, new Color(0.2f, 0.55f, 0.4f), 40, TextAlignmentOptions.Center);
 
             _labRt = _healthRt;
+        }
+
+        void BindMouthHint(Transform parent)
+        {
+            var row = new GameObject("MouthHint", typeof(RectTransform), typeof(LayoutElement));
+            row.transform.SetParent(parent, false);
+            row.GetComponent<LayoutElement>().preferredHeight = 36f;
+            row.GetComponent<LayoutElement>().minHeight = 36f;
+
+            var mouth = CreateImage(row.transform, "Mouth", new Color(0.45f, 0.22f, 0.32f, 0.9f));
+            ApplyRounded(mouth, RoundSprite(64, 24), 1.4f);
+            var rt = mouth.rectTransform;
+            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(42f, 6f);
+
+            if (_mouth == null)
+                _mouth = GetComponent<EmpathiaMouthDriver>() ?? gameObject.AddComponent<EmpathiaMouthDriver>();
+            _mouth.BindUi(mouth);
         }
 
         void OnRecordPressed()
@@ -2028,16 +2057,20 @@ namespace Empathia
             if (string.IsNullOrWhiteSpace(ttsUrl) && !string.IsNullOrWhiteSpace(turn.TurnId))
                 ttsUrl = EmpathiaApiClient.BuildTtsUrl(turn.TurnId, null);
 
-            if (string.IsNullOrWhiteSpace(ttsUrl))
-            {
-                SetStatus("Sin URL de TTS en turn.result (texto OK).");
-                yield break;
-            }
-
             if (_audio == null)
                 _audio = GetComponent<AudioSource>() ?? gameObject.AddComponent<AudioSource>();
 
             SetState("speaking");
+            if (_mouth != null)
+                _mouth.StartSpeaking(turn.Expression, turn.ReplyText);
+
+            if (string.IsNullOrWhiteSpace(ttsUrl))
+            {
+                SetStatus("Sin URL de TTS en turn.result (texto OK).");
+                yield return SpeakMouthOnly(2.4f);
+                yield break;
+            }
+
             SetStatus("Descargando TTS…");
 
             var playOk = false;
@@ -2050,21 +2083,54 @@ namespace Empathia
 
             if (!playOk)
             {
-                SetStatus("Texto OK. TTS no sonó: " + playMsg);
-                Debug.LogWarning("[Empathia] TTS: " + playMsg);
-                yield break;
+                Debug.LogWarning("[Empathia] TTS de B no sonó: " + playMsg);
+                SetStatus("B no tenía el WAV. Leyendo la respuesta en voz alta…");
+                var localOk = false;
+                var localMsg = "";
+                yield return EmpathiaLocalTts.Speak(turn.ReplyText, _audio, (ok, msg) =>
+                {
+                    localOk = ok;
+                    localMsg = msg;
+                });
+                if (!localOk)
+                {
+                    SetStatus("Texto OK. Sin voz: " + playMsg);
+                    ShowAlertModal("Sin voz", playMsg + " " + localMsg);
+                    yield return SpeakMouthOnly(2.4f);
+                    yield break;
+                }
+
+                playMsg = localMsg;
             }
 
             SetStatus("Speaking… " + playMsg);
-            // Esperar a que termine el clip (o un tope de seguridad).
             var waited = 0f;
             while (_audio != null && _audio.isPlaying && waited < 60f)
             {
                 waited += Time.unscaledDeltaTime;
+                if (_mouth != null)
+                    _mouth.Tick(waited);
                 yield return null;
             }
 
+            if (_mouth != null)
+                _mouth.Stop();
             SetStatus("Turno completo: texto + TTS.");
+        }
+
+        IEnumerator SpeakMouthOnly(float seconds)
+        {
+            var waited = 0f;
+            while (waited < seconds)
+            {
+                waited += Time.unscaledDeltaTime;
+                if (_mouth != null)
+                    _mouth.Tick(waited);
+                yield return null;
+            }
+
+            if (_mouth != null)
+                _mouth.Stop();
         }
 
         void OnSendTypedText()
@@ -2103,6 +2169,8 @@ namespace Empathia
         {
             if (_state != null)
                 _state.text = EmpathiaText.ForUi("Estado UI: " + s);
+            if (_mouth != null && s != "speaking")
+                _mouth.Stop();
         }
 
         void SetStatus(string s)

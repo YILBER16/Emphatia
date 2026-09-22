@@ -239,6 +239,56 @@ class TurnOrchestrator
             ->all();
     }
 
+    private function storeTtsAudio(AccompanimentSession $session, Turn $turn, array $inference): ?string
+    {
+        $dir = rtrim((string) config('empathia.data_root'), DIRECTORY_SEPARATOR)
+            .DIRECTORY_SEPARATOR.'audio'
+            .DIRECTORY_SEPARATOR.'output'
+            .DIRECTORY_SEPARATOR.$session->id;
+        if (! is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
+        $dest = $dir.DIRECTORY_SEPARATOR.$turn->id.'.wav';
+
+        $b64 = $inference['tts']['audio_b64'] ?? null;
+        if (is_string($b64) && $b64 !== '') {
+            $bytes = base64_decode($b64, true);
+            if ($bytes !== false && strlen($bytes) > 44) {
+                file_put_contents($dest, $bytes);
+                $this->console('[B] TTS guardado desde audio_b64 turn='.$turn->id);
+
+                return $dest;
+            }
+        }
+
+        $path = $inference['tts']['path'] ?? null;
+        if (is_string($path) && is_file($path)) {
+            if (@copy($path, $dest) || $path === $dest) {
+                return $dest;
+            }
+
+            return $path;
+        }
+
+        $url = rtrim((string) config('empathia.intelligence_url'), '/').'/internal/v1/audio/tts?turn_id='.urlencode((string) $turn->id);
+        try {
+            $response = Http::timeout(20)
+                ->connectTimeout(5)
+                ->withHeaders(['X-Internal-Token' => config('empathia.intelligence_token')])
+                ->get($url);
+            if ($response->successful() && strlen((string) $response->body()) > 44) {
+                file_put_contents($dest, $response->body());
+                $this->console('[B] TTS copiado desde C turn='.$turn->id);
+
+                return $dest;
+            }
+        } catch (\Throwable $e) {
+            $this->console('[B] TTS no se pudo copiar de C: '.$e->getMessage());
+        }
+
+        return is_string($path) && $path !== '' ? $path : null;
+    }
+
     private function persistInference(Turn $turn, AccompanimentSession $session, array $inference): void
     {
         $expression = $inference['expression'] ?? null;
@@ -264,7 +314,7 @@ class TurnOrchestrator
             'reply_text' => $inference['reply']['text'] ?? '',
             'emotion_label' => $inference['emotion']['label'] ?? 'neutral',
             'emotion_confidence' => $inference['emotion']['confidence'] ?? null,
-            'tts_path' => $inference['tts']['path'] ?? null,
+            'tts_path' => $this->storeTtsAudio($session, $turn, $inference),
             'expression_packet' => $expression,
             'model_versions' => $inference['model_versions'] ?? [],
             'metrics' => $inference['metrics'] ?? [],

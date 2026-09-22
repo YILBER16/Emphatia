@@ -7,16 +7,18 @@ Implements internal InferTurn + health + memory stubs.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
 import shutil
+import subprocess
 import time
 import unicodedata
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 HOST = os.environ.get("INTEL_HOST", "0.0.0.0")
 PORT = int(os.environ.get("INTEL_PORT", "8100"))
@@ -650,6 +652,7 @@ class Handler(BaseHTTPRequestHandler):
                         "/internal/v1/health",
                         "/internal/v1/vertex/health",
                         "/internal/v1/infer/turn",
+                        "/internal/v1/audio/tts",
                         "/internal/v1/memory/prepare",
                         "/internal/v1/memory/purge",
                     ],
@@ -676,6 +679,23 @@ class Handler(BaseHTTPRequestHandler):
                 json_response(self, 401, {"error": {"code": "UNAUTHORIZED", "message": "Invalid internal token"}})
                 return
             json_response(self, 200, {"status": "ok", "vertex": vertex_health()})
+            return
+        if path == "/internal/v1/audio/tts":
+            if not authorized(self):
+                json_response(self, 401, {"error": {"code": "UNAUTHORIZED", "message": "Invalid internal token"}})
+                return
+            query = parse_qs(urlparse(self.path).query)
+            turn_id = (query.get("turn_id") or [""])[0].strip()
+            wav = _find_tts_wav(turn_id) if turn_id else None
+            if wav is None:
+                json_response(self, 404, {"error": {"code": "NOT_FOUND", "message": "TTS audio missing"}})
+                return
+            data = wav.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/wav")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
             return
         json_response(self, 404, {"error": {"code": "NOT_FOUND", "message": path}})
 
@@ -831,10 +851,10 @@ class Handler(BaseHTTPRequestHandler):
             out_dir = DATA_ROOT / "audio" / "output" / str(body.get("session_id", "session"))
             out_dir.mkdir(parents=True, exist_ok=True)
             out_path = out_dir / f"{turn_id}.wav"
-            if SILENT_WAV.exists():
-                shutil.copyfile(SILENT_WAV, out_path)
-            else:
-                out_path.write_bytes(_minimal_wav())
+            tts_started = time.perf_counter()
+            tts_version = synthesize_reply_wav(reply_text, out_path)
+            tts_ms = max(1, int((time.perf_counter() - tts_started) * 1000))
+            audio_b64 = base64.b64encode(out_path.read_bytes()).decode("ascii") if out_path.exists() else ""
 
             expression = {}
             if FIXTURE_EXPRESSION.exists():
@@ -848,7 +868,6 @@ class Handler(BaseHTTPRequestHandler):
             ]
 
             analysis_ms = 20
-            tts_ms = 40
             total_ms = stt_ms + analysis_ms + llm_ms + tts_ms
 
             payload = {
@@ -864,6 +883,7 @@ class Handler(BaseHTTPRequestHandler):
                     "path": str(out_path),
                     "format": "wav",
                     "duration_ms": duration_ms,
+                    "audio_b64": audio_b64,
                 },
                 "timing": {"quality": "low", "cues": cues},
                 "expression": expression,
@@ -872,7 +892,7 @@ class Handler(BaseHTTPRequestHandler):
                     "stt": stt_version,
                     "llm": llm_version,
                     "prompt": prompt_version,
-                    "tts": "stub-kokoro",
+                    "tts": tts_version,
                 },
                 "metrics": {
                     "stt_ms": stt_ms,
@@ -886,6 +906,100 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         json_response(self, 404, {"error": {"code": "NOT_FOUND", "message": path}})
+
+
+def _find_tts_wav(turn_id: str) -> Path | None:
+    root = DATA_ROOT / "audio" / "output"
+    if not turn_id or not root.exists():
+        return None
+    matches = list(root.rglob(f"{turn_id}.wav"))
+    return matches[0] if matches else None
+
+
+def synthesize_reply_wav(text: str, out_path: Path) -> str:
+    """Escribe un WAV con voz. Prueba el paquete de C y, si no, SAPI de Windows."""
+    spoken = (text or "").strip() or "Estoy aquí para acompañarte."
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if _tts_with_windows_sapi(spoken, out_path):
+        return "windows-sapi"
+    if _tts_with_pyttsx3(spoken, out_path):
+        return "pyttsx3"
+
+    if SILENT_WAV.exists():
+        shutil.copyfile(SILENT_WAV, out_path)
+    else:
+        out_path.write_bytes(_minimal_wav())
+    print("[C] TTS cayó a silencio. Instala voz o pyttsx3.", flush=True)
+    return "stub-kokoro"
+
+
+def _tts_with_windows_sapi(text: str, out_path: Path) -> bool:
+    txt_path = out_path.with_suffix(".txt")
+    ps1_path = out_path.with_suffix(".ps1")
+    try:
+        txt_path.write_text(text, encoding="utf-8")
+        ps1_path.write_text(
+            "\n".join(
+                [
+                    "Add-Type -AssemblyName System.Speech",
+                    f"$txt = Get-Content -LiteralPath '{txt_path}' -Raw -Encoding UTF8",
+                    "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer",
+                    "$s.Rate = -1",
+                    "$es = $s.GetInstalledVoices() | ForEach-Object { $_.VoiceInfo } |",
+                    "  Where-Object { $_.Culture.Name -like 'es*' } | Select-Object -First 1",
+                    "if ($es) { $s.SelectVoice($es.Name) }",
+                    f"$s.SetOutputToWaveFile('{out_path}')",
+                    "$s.Speak($txt)",
+                    "$s.Dispose()",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        completed = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(ps1_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=40,
+            check=False,
+        )
+        return completed.returncode == 0 and out_path.exists() and out_path.stat().st_size > 44
+    except Exception as exc:
+        print(f"[C] TTS SAPI falló: {exc}", flush=True)
+        return False
+    finally:
+        for extra in (txt_path, ps1_path):
+            try:
+                extra.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def _tts_with_pyttsx3(text: str, out_path: Path) -> bool:
+    try:
+        import pyttsx3
+    except Exception:
+        return False
+    try:
+        engine = pyttsx3.init()
+        for voice in engine.getProperty("voices") or []:
+            name = f"{getattr(voice, 'id', '')} {getattr(voice, 'name', '')} {getattr(voice, 'languages', '')}"
+            if "es" in name.lower() or "span" in name.lower():
+                engine.setProperty("voice", voice.id)
+                break
+        engine.save_to_file(text, str(out_path))
+        engine.runAndWait()
+        return out_path.exists() and out_path.stat().st_size > 44
+    except Exception as exc:
+        print(f"[C] TTS pyttsx3 falló: {exc}", flush=True)
+        return False
 
 
 def _minimal_wav() -> bytes:
