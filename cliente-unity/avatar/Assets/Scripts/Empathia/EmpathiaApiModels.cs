@@ -269,6 +269,34 @@ namespace Empathia
         public string stage;
         public string state;
         public TtsInfo tts;
+        public ExpressionPacketDto expression;
+    }
+
+    [Serializable]
+    public class ExpressionPacketDto
+    {
+        public int version;
+        public string turn_id;
+        public int duration_ms;
+        public string timing_quality;
+        public ExpressionLipCue[] lips;
+        public ExpressionFaceCue[] face;
+    }
+
+    [Serializable]
+    public class ExpressionLipCue
+    {
+        public int t_ms;
+        public string viseme;
+        public float weight = 1f;
+    }
+
+    [Serializable]
+    public class ExpressionFaceCue
+    {
+        public int t_ms;
+        public string gesture;
+        public float weight = 1f;
     }
 
     [Serializable]
@@ -287,5 +315,6 @@ namespace Empathia
         public string ErrorCode;
         public string ErrorMessage;
         public bool IsError;
+        public ExpressionPacketDto Expression;
     }
 }

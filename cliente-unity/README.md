@@ -2,8 +2,8 @@
 
 Proyecto Unity 6 en `avatar/`.
 
-**Ruta de este PC (disco D):** `D:\Emphatia\cliente-unity\avatar`  
-No abras `C:\Emphatia\...` (copia vieja). Atajo: `.\cliente-unity\tools\abrir-unity.ps1`
+**Ruta de este PC:** `D:\Emphatia\cliente-unity\avatar`  
+Atajo: `.\cliente-unity\tools\abrir-unity.ps1`
 
 ## Pantalla de inicio de sesión
 
@@ -11,16 +11,16 @@ No abras `C:\Emphatia\...` (copia vieja). Atajo: `.\cliente-unity\tools\abrir-un
 2. Abre la escena `Assets/Scenes/Login.unity`.
 3. En Hierarchy debe existir el objeto **EmpathiaLogin** (con `LoginScreenController`).
 4. Pulsa **Play** ▶ (la UI se crea en Play, no en edición).
-5. Debe aparecer la tarjeta **Inicio de sesión**. Si no, mira la Console por `[Empathia] LoginScreenController activo`.
-4. Servidor: `http://127.0.0.1:8000/api/v1` (mismo PC). Si B está en otro PC: `http://IP_DE_B:8000/api/v1`.
-5. Pestaña **Adulto** (flujo actual de B): `orientador1` / `password` → elige un estudiante de la lista.
-6. Pestaña **Estudiante**: UI lista; el ingreso por documento espera la ruta de B. Mientras tanto usa Adulto.
+5. Servidor: `http://192.168.1.31:8000/api/v1` (IP de B en el lab).
+6. **Ingresar:** elige un nombre de la lista (B ya tiene el perfil).
+7. **Registrar:** documento, nombre y apellido, sede, grado, jornada.
+8. En Salud: texto o audio → respuesta + TTS. Si falla, sale un modal.
 
-Scripts: `avatar/Assets/Scripts/Empathia/` (la UI se crea sola al dar Play).
+Scripts: `avatar/Assets/Scripts/Empathia/`
 
-## Sprint 2 — Turno audio
+## Sprint 2 — Turno
 
-Tras el login: **Crear sesión** → **Turno WAV prueba** (o micrófono) → ver respuesta + TTS.
+Tras el login: **Crear sesión** (automático al enviar) → texto o **Grabar audio** → ver respuesta + TTS + boca mínima.
 
 ## Regla dura
 

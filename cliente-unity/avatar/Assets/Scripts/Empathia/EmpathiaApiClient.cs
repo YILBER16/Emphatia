@@ -78,7 +78,7 @@ namespace Empathia
                     EmpathiaAuthState.AdultToken = null;
                     EmpathiaAuthState.StudentUserId = null;
                     EmpathiaAuthState.StudentDisplayName = parsed.user != null ? parsed.user.display_name : null;
-                    EmpathiaAuthState.PreferredName = EmpathiaAuthState.StudentDisplayName;
+                    EmpathiaAuthState.SetPreferredName(EmpathiaAuthState.StudentDisplayName);
                     if (EmpathiaAuthState.IsAdultStaff)
                         EmpathiaAuthState.AdultToken = parsed.token;
                     EmpathiaAuthState.ClearSessionMemory();
@@ -282,6 +282,10 @@ namespace Empathia
                         ? parsed.profile.nombre_preferencia
                         : (parsed.user != null ? parsed.user.display_name : nombre);
                     EmpathiaAuthState.Username = EmpathiaAuthState.StudentDisplayName;
+                    EmpathiaAuthState.SetPreferredName(
+                        !string.IsNullOrWhiteSpace(nombre)
+                            ? nombre
+                            : EmpathiaAuthState.StudentDisplayName);
                     EmpathiaAuthState.ClearSessionMemory();
                     onDone(true, "Ingreso estudiante OK: " + EmpathiaAuthState.StudentDisplayName);
                 });
@@ -362,7 +366,13 @@ namespace Empathia
                     EmpathiaAuthState.StudentDisplayName = parsed.profile != null && !string.IsNullOrEmpty(parsed.profile.nombre_preferencia)
                         ? parsed.profile.nombre_preferencia
                         : (parsed.user != null ? parsed.user.display_name : studentUserId);
-                    EmpathiaAuthState.PreferredName = EmpathiaAuthState.StudentDisplayName;
+                    var preferFromList = EmpathiaAuthState.SelectedStudent != null
+                        ? EmpathiaAuthState.SelectedStudent.nombres
+                        : null;
+                    EmpathiaAuthState.SetPreferredName(
+                        !string.IsNullOrWhiteSpace(preferFromList)
+                            ? preferFromList
+                            : EmpathiaAuthState.StudentDisplayName);
                     EmpathiaAuthState.Username = EmpathiaAuthState.StudentDisplayName;
                     EmpathiaAuthState.ClearSessionMemory();
                     onDone(true, "Estudiante listo: " + EmpathiaAuthState.StudentDisplayName);
@@ -663,7 +673,8 @@ namespace Empathia
                 text = message.Trim(),
                 message = message.Trim(),
                 client_turn_key = turnKey,
-                preferred_name = EmpathiaAuthState.PreferredName,
+                preferred_name = EmpathiaAuthState.NormalizePreferredName(
+                    EmpathiaAuthState.PreferredName ?? EmpathiaAuthState.StudentDisplayName),
             };
 
             Debug.Log("[Empathia] POST " + url + " | key=" + turnKey + " | " + message.Trim());
@@ -728,7 +739,8 @@ namespace Empathia
                 text = message.Trim(),
                 message = message.Trim(),
                 client_turn_key = turnKey,
-                preferred_name = EmpathiaAuthState.PreferredName,
+                preferred_name = EmpathiaAuthState.NormalizePreferredName(
+                    EmpathiaAuthState.PreferredName ?? EmpathiaAuthState.StudentDisplayName),
             };
 
             Debug.Log("[Empathia] POST " + url + " | key=" + turnKey + " | " + message.Trim());
@@ -918,6 +930,7 @@ namespace Empathia
                                     ReplyText = ev.payload.reply_text,
                                     Transcript = ev.payload.transcript,
                                     TtsUrl = BuildTtsUrl(ev.payload.turn_id, ev.payload.tts != null ? ev.payload.tts.url : null),
+                                    Expression = ev.payload.expression,
                                 };
                                 Debug.Log("[Empathia] turn.result transcript: " + (result.Transcript ?? "(vacío)"));
                                 Debug.Log("[Empathia] turn.result reply_text: " + (result.ReplyText ?? "(vacío)"));
@@ -940,7 +953,12 @@ namespace Empathia
                 yield break;
             }
 
-            onDone(true, result, result.IsError ? "turn.error" : "turn.result OK");
+            onDone(
+                true,
+                result,
+                result.IsError
+                    ? MapTurnError(result.ErrorCode, result.ErrorMessage)
+                    : "turn.result OK");
         }
 
         public IEnumerator DownloadAndPlayTts(string ttsUrl, AudioSource audioSource, Action<bool, string> onDone)
@@ -960,6 +978,7 @@ namespace Empathia
             using (var req = UnityWebRequest.Get(ttsUrl))
             {
                 req.SetRequestHeader("Authorization", "Bearer " + EmpathiaAuthState.Token);
+                req.SetRequestHeader("Accept", "audio/wav, audio/mpeg, audio/ogg, */*");
                 yield return req.SendWebRequest();
 
                 var code = req.responseCode;
@@ -970,7 +989,16 @@ namespace Empathia
 #endif
                 if (failed || code < 200 || code >= 300)
                 {
-                    onDone(false, MapError(code, req.downloadHandler != null ? req.downloadHandler.text : req.error, "No se pudo descargar TTS."));
+                    var body = req.downloadHandler != null ? req.downloadHandler.text : req.error;
+                    if (code == 404
+                        || (!string.IsNullOrEmpty(body)
+                            && body.IndexOf("TTS audio missing", StringComparison.OrdinalIgnoreCase) >= 0))
+                    {
+                        onDone(false, "B no tiene el archivo de voz. C ya genera el WAV en su PC, pero B no lo copia. Pide a B que guarde el audio del turno.");
+                        yield break;
+                    }
+
+                    onDone(false, MapError(code, body, "No se pudo descargar TTS."));
                     yield break;
                 }
 
@@ -981,38 +1009,62 @@ namespace Empathia
                     yield break;
                 }
 
-                var path = Path.Combine(Application.temporaryCachePath, "empathia-tts.wav");
-                File.WriteAllBytes(path, bytes);
-                var fileUrl = "file:///" + path.Replace("\\", "/");
+                AudioClip clip = null;
+                string decodeError = null;
+                if (EmpathiaWav.LooksLikeWav(bytes))
+                    clip = EmpathiaWav.TryCreateClip(bytes, "empathia-tts", out decodeError);
 
-                using (var clipReq = UnityWebRequestMultimedia.GetAudioClip(fileUrl, AudioType.WAV))
+                if (clip == null && (EmpathiaWav.LooksLikeMpeg(bytes) || EmpathiaWav.LooksLikeOgg(bytes)))
                 {
-                    yield return clipReq.SendWebRequest();
+                    var kind = EmpathiaWav.LooksLikeOgg(bytes) ? AudioType.OGGVORBIS : AudioType.MPEG;
+                    var ext = kind == AudioType.OGGVORBIS ? "ogg" : "mp3";
+                    var path = Path.Combine(Application.temporaryCachePath, "empathia-tts." + ext);
+                    File.WriteAllBytes(path, bytes);
+                    var fileUrl = new Uri(path).AbsoluteUri;
+                    using (var clipReq = UnityWebRequestMultimedia.GetAudioClip(fileUrl, kind))
+                    {
+                        yield return clipReq.SendWebRequest();
 #if UNITY_2020_2_OR_NEWER
-                    var clipFailed = clipReq.result != UnityWebRequest.Result.Success;
+                        var clipFailed = clipReq.result != UnityWebRequest.Result.Success;
 #else
-                    var clipFailed = clipReq.isNetworkError || clipReq.isHttpError;
+                        var clipFailed = clipReq.isNetworkError || clipReq.isHttpError;
 #endif
-                    if (clipFailed)
-                    {
-                        onDone(false, "No se pudo decodificar el WAV de TTS.");
-                        yield break;
+                        if (!clipFailed)
+                            clip = DownloadHandlerAudioClip.GetContent(clipReq);
+                        else
+                            decodeError = clipReq.error;
                     }
-
-                    var clip = DownloadHandlerAudioClip.GetContent(clipReq);
-                    if (clip == null)
-                    {
-                        onDone(false, "AudioClip de TTS nulo.");
-                        yield break;
-                    }
-
-                    if (audioSource == null)
-                        audioSource = gameObject.AddComponent<AudioSource>();
-
-                    audioSource.clip = clip;
-                    audioSource.Play();
-                    onDone(true, "Reproduciendo TTS (" + clip.length.ToString("0.0") + "s).");
                 }
+
+                if (clip == null)
+                {
+                    onDone(false, string.IsNullOrEmpty(decodeError)
+                        ? "No se pudo decodificar el audio de TTS."
+                        : decodeError);
+                    yield break;
+                }
+
+                if (audioSource == null)
+                    audioSource = gameObject.AddComponent<AudioSource>();
+
+                audioSource.playOnAwake = false;
+                audioSource.loop = false;
+                audioSource.mute = false;
+                audioSource.volume = 1f;
+                audioSource.spatialBlend = 0f;
+                audioSource.clip = clip;
+                audioSource.Play();
+
+                var peak = EmpathiaWav.Peak(clip);
+                if (peak < 0.01f)
+                {
+                    Debug.LogWarning("[Empathia] TTS casi en silencio (peak=" + peak.ToString("0.000") + "). C aún puede estar enviando WAV stub.");
+                    onDone(true, "TTS sonó, pero está casi en silencio. Pide a C un WAV con voz real.");
+                    yield break;
+                }
+
+                Debug.Log("[Empathia] Reproduciendo TTS " + clip.length.ToString("0.0") + "s peak=" + peak.ToString("0.00"));
+                onDone(true, "Reproduciendo voz (" + clip.length.ToString("0.0") + "s).");
             }
         }
 

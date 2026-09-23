@@ -21,6 +21,52 @@ namespace Empathia
         public static StudentListItem SelectedStudent { get; set; }
         public static string PreferredName { get; set; }
 
+        public static void SetPreferredName(string raw)
+        {
+            PreferredName = NormalizePreferredName(raw);
+        }
+
+        public static string NormalizePreferredName(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return null;
+
+            var chars = new char[raw.Length];
+            var n = 0;
+            var prevSpace = false;
+            foreach (var ch in raw.Trim())
+            {
+                var letter = char.IsLetter(ch) || ch == '\'' || ch == '-';
+                var space = ch == ' ';
+                if (!letter && !space)
+                    continue;
+                if (space)
+                {
+                    if (n == 0 || prevSpace)
+                        continue;
+                    prevSpace = true;
+                    chars[n++] = ' ';
+                    continue;
+                }
+
+                prevSpace = false;
+                chars[n++] = ch;
+            }
+
+            if (n == 0)
+                return null;
+
+            var cleaned = new string(chars, 0, n).Trim();
+            var parts = cleaned.Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0)
+                return null;
+
+            var name = parts.Length >= 2 ? parts[0] + " " + parts[1] : parts[0];
+            if (name.Length > 40)
+                name = name.Substring(0, 40).Trim();
+            return string.IsNullOrEmpty(name) ? null : name;
+        }
+
         static string _sessionId;
         public static string SessionId
         {
