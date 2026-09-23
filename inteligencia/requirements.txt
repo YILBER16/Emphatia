@@ -1,1 +1,2 @@
 google-genai==2.20.0
+piper-tts==1.8.0

@@ -1,0 +1,2 @@
+# Downloaded Piper voice models (large binaries, fetched via python -m piper.download_voices).
+tts/voices/
