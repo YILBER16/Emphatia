@@ -76,11 +76,15 @@ namespace Empathia
                     EmpathiaAuthState.Username = parsed.user != null ? parsed.user.username : username;
                     EmpathiaAuthState.Role = parsed.user != null ? parsed.user.role : null;
                     EmpathiaAuthState.AdultToken = null;
+                    EmpathiaAuthState.AdultRole = null;
                     EmpathiaAuthState.StudentUserId = null;
                     EmpathiaAuthState.StudentDisplayName = parsed.user != null ? parsed.user.display_name : null;
                     EmpathiaAuthState.SetPreferredName(EmpathiaAuthState.StudentDisplayName);
                     if (EmpathiaAuthState.IsAdultStaff)
+                    {
                         EmpathiaAuthState.AdultToken = parsed.token;
+                        EmpathiaAuthState.AdultRole = EmpathiaAuthState.Role;
+                    }
                     EmpathiaAuthState.ClearSessionMemory();
                     onDone(true, "Login OK (" + (EmpathiaAuthState.Role ?? "?") + "). Token: " + EmpathiaAuthState.TokenPreview);
                 });
@@ -276,6 +280,7 @@ namespace Empathia
 
                     EmpathiaAuthState.Token = parsed.token;
                     EmpathiaAuthState.AdultToken = null;
+                    EmpathiaAuthState.AdultRole = null;
                     EmpathiaAuthState.Role = parsed.user != null ? parsed.user.role : "student";
                     EmpathiaAuthState.StudentUserId = parsed.user != null ? parsed.user.id : null;
                     EmpathiaAuthState.StudentDisplayName = parsed.profile != null && !string.IsNullOrEmpty(parsed.profile.nombre_preferencia)
@@ -633,6 +638,44 @@ namespace Empathia
 
                     EmpathiaAuthState.ClearSession();
                     onDone(true, "Sesión cerrada.");
+                });
+        }
+
+        public IEnumerator FetchSessionSummary(string sessionId, Action<bool, string, SessionSummaryDto> onDone)
+        {
+            if (!EmpathiaAuthState.HasToken)
+            {
+                onDone(false, "Primero haz login.", null);
+                yield break;
+            }
+
+            if (string.IsNullOrEmpty(sessionId))
+            {
+                onDone(false, "Falta el id de la conversación.", null);
+                yield break;
+            }
+
+            yield return SendJson(
+                "GET",
+                EmpathiaAuthState.BaseUrl.TrimEnd('/') + "/accompaniment/sessions/" + sessionId + "/summary",
+                "{}",
+                EmpathiaAuthState.Token,
+                (ok, code, text) =>
+                {
+                    if (!ok)
+                    {
+                        onDone(false, MapError(code, text, "No se pudo leer el reporte de la charla."), null);
+                        return;
+                    }
+
+                    var parsed = JsonUtility.FromJson<SessionSummaryResponse>(text);
+                    if (parsed == null || parsed.summary == null)
+                    {
+                        onDone(false, "B no devolvió el resumen de esta charla.", null);
+                        return;
+                    }
+
+                    onDone(true, "Reporte listo.", parsed.summary);
                 });
         }
 

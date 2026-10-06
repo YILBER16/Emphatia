@@ -209,6 +209,33 @@ namespace Empathia
     }
 
     [Serializable]
+    public class SessionSummaryResponse
+    {
+        public SessionSummaryDto summary;
+    }
+
+    [Serializable]
+    public class SessionSummaryDto
+    {
+        public string session_id;
+        public string student_name;
+        public string status;
+        public string conversation_summary;
+        public int turn_count;
+        public int risk_count;
+        public EmotionCountDto[] emotion_counts;
+        public string started_at;
+        public string ended_at;
+    }
+
+    [Serializable]
+    public class EmotionCountDto
+    {
+        public string label;
+        public int count;
+    }
+
+    [Serializable]
     public class ApiErrorEnvelope
     {
         public ApiError error;

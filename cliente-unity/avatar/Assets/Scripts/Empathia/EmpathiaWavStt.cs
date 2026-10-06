@@ -55,7 +55,7 @@ namespace Empathia
             var pyCmd = ResolvePythonCommand(script, wavPath, out usedCmd);
             if (pyCmd == null)
             {
-                onDone(false, null, "No encontré Python (py/python) en PATH.");
+                onDone(false, null, "No encontré Python. En este PC está en C:\\laragon\\bin\\python (no en PATH). Cierra Unity, vuelve a abrir el proyecto y pulsa Play.");
                 yield break;
             }
 
@@ -225,49 +225,143 @@ namespace Empathia
         {
             usedCmd = null;
             var quoted = "\"" + script + "\" \"" + wavPath + "\" es-ES";
-            var attempts = new[]
-            {
-                ("py", "-3 " + quoted),
-                ("python", quoted),
-                ("python3", quoted),
-            };
 
-            foreach (var attempt in attempts)
+            foreach (var exe in CandidatePythonExes())
             {
-                try
-                {
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = attempt.Item1,
-                        Arguments = attempt.Item1 == "py" ? "-3 -c \"print(1)\"" : "-c \"print(1)\"",
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        CreateNoWindow = true,
-                    };
-                    using (var proc = Process.Start(psi))
-                    {
-                        if (proc == null)
-                            continue;
-                        if (!proc.WaitForExit(4000))
-                        {
-                            try { proc.Kill(); } catch { /* ignore */ }
-                            continue;
-                        }
-                        if (proc.ExitCode != 0)
-                            continue;
-                    }
-
-                    usedCmd = attempt.Item1 + " " + attempt.Item2;
-                    return (attempt.Item1, attempt.Item2);
-                }
-                catch
-                {
-                    // try next
-                }
+                if (!PythonRuns(exe, "-c \"print(1)\""))
+                    continue;
+                usedCmd = exe + " " + quoted;
+                return (exe, quoted);
             }
 
             return null;
+        }
+
+        static System.Collections.Generic.List<string> CandidatePythonExes()
+        {
+            var found = new System.Collections.Generic.List<string>();
+            var seen = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            void Offer(string path)
+            {
+                if (string.IsNullOrWhiteSpace(path))
+                    return;
+                path = path.Trim().Trim('"');
+                if (!LooksLikeRealPython(path))
+                    return;
+                if (!seen.Add(path))
+                    return;
+                found.Add(path);
+            }
+
+            // Unity (app GUI) casi nunca ve el PATH de PowerShell / Laragon.
+            Offer(Environment.GetEnvironmentVariable("EMPATHIA_PYTHON"));
+
+            var laragonRoot = @"C:\laragon\bin\python";
+            if (Directory.Exists(laragonRoot))
+            {
+                try
+                {
+                    foreach (var dir in Directory.GetDirectories(laragonRoot))
+                        Offer(Path.Combine(dir, "python.exe"));
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
+
+            var localPython = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Programs",
+                "Python");
+            if (Directory.Exists(localPython))
+            {
+                try
+                {
+                    foreach (var dir in Directory.GetDirectories(localPython))
+                        Offer(Path.Combine(dir, "python.exe"));
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
+
+            foreach (var name in new[] { "py.exe", "python.exe", "python3.exe" })
+            {
+                foreach (var resolved in ResolveOnPath(name))
+                    Offer(resolved);
+            }
+
+            return found;
+        }
+
+        static System.Collections.Generic.IEnumerable<string> ResolveOnPath(string fileName)
+        {
+            var path = Environment.GetEnvironmentVariable("PATH") ?? "";
+            foreach (var dir in path.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string candidate;
+                try
+                {
+                    candidate = Path.Combine(dir.Trim().Trim('"'), fileName);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (LooksLikeRealPython(candidate))
+                    yield return candidate;
+            }
+        }
+
+        static bool LooksLikeRealPython(string exe)
+        {
+            if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+                return false;
+            if (exe.IndexOf("WindowsApps", StringComparison.OrdinalIgnoreCase) >= 0)
+                return false;
+            try
+            {
+                return new FileInfo(exe).Length > 1024;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        static bool PythonRuns(string exe, string probeArgs)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = exe,
+                    Arguments = probeArgs,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                };
+                using (var proc = Process.Start(psi))
+                {
+                    if (proc == null)
+                        return false;
+                    if (!proc.WaitForExit(4000))
+                    {
+                        try { proc.Kill(); } catch { /* ignore */ }
+                        return false;
+                    }
+                    return proc.ExitCode == 0;
+                }
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 }

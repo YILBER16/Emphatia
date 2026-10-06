@@ -8,12 +8,32 @@ namespace Empathia
     public static class EmpathiaAuthState
     {
         const string PrefSessionId = "Empathia.LastSessionId";
+        const string PrefBaseUrl = "Empathia.BaseUrl";
+        const string PrefMicDevice = "Empathia.MicDevice";
+        const string DefaultBaseUrl = "http://127.0.0.1:8000/api/v1";
 
-        // B en este mismo PC. Editable en la UI de login.
-        public static string BaseUrl { get; set; } = "http://127.0.0.1:8000/api/v1";
+        // B en este PC. Se edita en Configuración y se recuerda.
+        public static string BaseUrl { get; set; } = DefaultBaseUrl;
+        public static string MicDevice { get; set; }
+
+        public static void RestoreSettings()
+        {
+            var url = PlayerPrefs.GetString(PrefBaseUrl, "");
+            if (!string.IsNullOrWhiteSpace(url))
+                BaseUrl = url.Trim();
+            MicDevice = PlayerPrefs.GetString(PrefMicDevice, "");
+        }
+
+        public static void PersistSettings()
+        {
+            PlayerPrefs.SetString(PrefBaseUrl, string.IsNullOrWhiteSpace(BaseUrl) ? DefaultBaseUrl : BaseUrl.Trim());
+            PlayerPrefs.SetString(PrefMicDevice, MicDevice ?? "");
+            PlayerPrefs.Save();
+        }
         public static string Token { get; set; }
         /// <summary>Token del adulto (admin/counselor) antes del assume.</summary>
         public static string AdultToken { get; set; }
+        public static string AdultRole { get; set; }
         public static string Username { get; set; }
         public static string Role { get; set; }
         public static string StudentUserId { get; set; }
@@ -117,10 +137,26 @@ namespace Empathia
             PlayerPrefs.Save();
         }
 
+        public static bool TryRestoreAdult()
+        {
+            if (string.IsNullOrEmpty(AdultToken))
+                return false;
+
+            Token = AdultToken;
+            Role = !string.IsNullOrEmpty(AdultRole) ? AdultRole : "counselor";
+            StudentUserId = null;
+            StudentDisplayName = null;
+            SelectedStudent = null;
+            PreferredName = null;
+            ClearSessionMemory();
+            return true;
+        }
+
         public static void ClearAll()
         {
             Token = null;
             AdultToken = null;
+            AdultRole = null;
             Username = null;
             Role = null;
             StudentUserId = null;

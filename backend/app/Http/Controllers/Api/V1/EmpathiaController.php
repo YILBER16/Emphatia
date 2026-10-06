@@ -408,20 +408,38 @@ class EmpathiaController extends Controller
     {
         $session = $this->resolveSession($sessionId);
         $this->assertCanReadSession($request->user(), $session);
+        $session->loadMissing('student.studentProfile');
 
         $turns = $session->turns()
             ->where('status', 'completed')
-            ->get(['emotion_label']);
+            ->get(['emotion_label', 'risk_emitted']);
+
+        $emotionCounts = [];
+        foreach ($turns->groupBy('emotion_label') as $label => $group) {
+            if ($label === null || $label === '') {
+                continue;
+            }
+            $emotionCounts[] = [
+                'label' => (string) $label,
+                'count' => $group->count(),
+            ];
+        }
+
+        $studentName = $session->student?->studentProfile?->resolvedDisplayName()
+            ?: ($session->student?->display_name ?? $session->student?->name);
 
         return response()->json([
             'summary' => [
                 'session_id' => $session->id,
+                'student_name' => $studentName,
                 'status' => $session->status,
                 'conversation_summary' => $session->conversation_summary,
                 'turn_count' => $turns->count(),
+                'risk_count' => RiskSignalRecord::query()->where('session_id', $session->id)->count(),
                 'emotions' => $turns->groupBy('emotion_label')->map->count()->filter(
-                    fn (int $count, ?string $label): bool => $label !== null,
+                    fn (int $count, ?string $label): bool => $label !== null && $label !== '',
                 ),
+                'emotion_counts' => $emotionCounts,
                 'started_at' => $session->started_at?->toISOString(),
                 'ended_at' => $session->ended_at?->toISOString(),
             ],

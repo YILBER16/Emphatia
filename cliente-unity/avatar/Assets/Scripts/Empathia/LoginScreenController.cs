@@ -1,9 +1,23 @@
 using System;
+using System.Reflection;
+using Convai.Domain.DomainEvents.Runtime;
+using Convai.Domain.EventSystem;
+using Convai.Modules.BodyAnimation.Components;
+using Convai.Modules.BodyAnimation.Data;
+using Convai.Modules.BodyLanguage.Components;
+using Convai.Modules.Emotion.Components;
+using Convai.Modules.Gaze.Components;
+using Convai.Runtime.Components;
+using Convai.Runtime.Embodiment;
 using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
+using UnityEngine.Animations;
 using UnityEngine.EventSystems;
+using UnityEngine.Playables;
 using UnityEngine.UI;
 #if ENABLE_INPUT_SYSTEM
 using UnityEngine.InputSystem.UI;
@@ -14,17 +28,18 @@ namespace Empathia
     /// <summary>
     /// Login EmpathIA: UI estilo mockup 1920×1080 (fondo + tarjeta blanca).
     /// </summary>
+    [DefaultExecutionOrder(-200)]
     public class LoginScreenController : MonoBehaviour
     {
         const int MaxMicSeconds = 60;
         const int MicSampleRate = 16000;
         const float RefW = 1920f;
         const float RefH = 1080f;
-        const float LoginCardW = 760f;
-        const float LoginCardTop = 0.74f;
-        const float LoginCardBottom = 0.03f;
-        const float LoginFieldH = 70f;
-        const float LoginDropItemH = 64f;
+        const float LoginCardW = 680f;
+        const float LoginCardTop = 0.72f;
+        const float LoginCardMaxH = 560f;
+        const float LoginFieldH = 76f;
+        const float LoginDropItemH = 68f;
 
         static readonly Color Navy = new Color(0.12f, 0.14f, 0.22f, 1f);
         static readonly Color Muted = new Color(0.42f, 0.45f, 0.55f, 1f);
@@ -56,61 +71,82 @@ namespace Empathia
         Sprite _roundSm;
         Sprite _roundPill;
         Sprite _gradBtn;
+        bool _uiFromScene;
+        Camera _framedCam;
+        Vector3 _camHoldPos;
+        Vector3 _camLook;
+        bool _holdCam;
 
-        RectTransform _rootRt;
-        RectTransform _cardRt;
-        RectTransform _bgRt;
-        RectTransform _labRt;
-        RectTransform _confirmRt;
-        RectTransform _healthRt;
-        CanvasScaler _scaler;
+        [Header("UI en escena (Isaac puede moverla)")]
+        [SerializeField] RectTransform _rootRt;
+        [SerializeField] RectTransform _cardRt;
+        [SerializeField] RectTransform _bgRt;
+        [SerializeField] RectTransform _labRt;
+        [SerializeField] RectTransform _confirmRt;
+        [SerializeField] RectTransform _healthRt;
+        [SerializeField] CanvasScaler _scaler;
 
-        GameObject _loginView;
-        GameObject _confirmView;
-        GameObject _healthView;
-        GameObject _pickStudentView;
-        GameObject _cardShadowGo;
-        Transform _studentListContent;
-        TextMeshProUGUI _pickStatus;
+        [SerializeField] GameObject _loginView;
+        [SerializeField] GameObject _confirmView;
+        [SerializeField] GameObject _healthView;
+        [SerializeField] GameObject _reportView;
+        [SerializeField] GameObject _pickStudentView;
+        [SerializeField] GameObject _cardShadowGo;
+        [SerializeField] Transform _studentListContent;
+        [SerializeField] TextMeshProUGUI _pickStatus;
 
-        TMP_InputField _baseUrl;
-        TMP_InputField _user;
-        TMP_InputField _pass;
-        TMP_InputField _regName;
-        TMP_InputField _regDoc;
-        TMP_Dropdown _regCampus;
-        TMP_Dropdown _regGrade;
-        TMP_Dropdown _regShift;
-        GameObject _studentLoginPanel;
-        GameObject _registerPanel;
-        GameObject _adultLoginPanel;
-        Transform _loginListContent;
-        Button _refreshListBtn;
+        [SerializeField] TMP_InputField _baseUrl;
+        [SerializeField] TMP_InputField _user;
+        [SerializeField] TMP_InputField _pass;
+        [SerializeField] TMP_InputField _regName;
+        [SerializeField] TMP_InputField _regDoc;
+        [SerializeField] TMP_Dropdown _regCampus;
+        [SerializeField] TMP_Dropdown _regGrade;
+        [SerializeField] TMP_Dropdown _regShift;
+        [SerializeField] GameObject _studentLoginPanel;
+        [SerializeField] GameObject _registerPanel;
+        [SerializeField] GameObject _adultLoginPanel;
+        [SerializeField] Transform _loginListContent;
+        [SerializeField] Button _refreshListBtn;
         StudentListItem[] _directoryStudents;
-        Button _createStudentBtn;
-        Button _backToLoginBtn;
-        TMP_InputField _typedMessage;
-        TextMeshProUGUI _status;
-        TextMeshProUGUI _state;
-        TextMeshProUGUI _reply;
-        TextMeshProUGUI _transcript;
-        TextMeshProUGUI _loginStatus;
-        TextMeshProUGUI _loginHint;
-        GameObject _alertModal;
-        TextMeshProUGUI _alertTitle;
-        TextMeshProUGUI _alertBody;
-        Button _alertCloseBtn;
-        TextMeshProUGUI _welcomeTitle;
-        TextMeshProUGUI _welcomeSub;
-        Button _loginBtn;
-        Button _registerBtn;
-        Button _checkBBtn;
-        Button _confirmBtn;
-        Button _recordBtn;
-        TextMeshProUGUI _recordBtnLabel;
-        Button _sendTextBtn;
-        Button _eyeBtn;
-        TextMeshProUGUI _recordHint;
+        [SerializeField] Button _createStudentBtn;
+        [SerializeField] Button _backToLoginBtn;
+        [SerializeField] TMP_InputField _typedMessage;
+        [SerializeField] TextMeshProUGUI _status;
+        [SerializeField] TextMeshProUGUI _state;
+        [SerializeField] TextMeshProUGUI _reply;
+        [SerializeField] TextMeshProUGUI _transcript;
+        [SerializeField] TextMeshProUGUI _loginStatus;
+        [SerializeField] TextMeshProUGUI _loginHint;
+        [SerializeField] GameObject _alertModal;
+        [SerializeField] TextMeshProUGUI _alertTitle;
+        [SerializeField] TextMeshProUGUI _alertBody;
+        [SerializeField] Button _alertCloseBtn;
+        [SerializeField] GameObject _settingsView;
+        [SerializeField] TextMeshProUGUI _settingsStatus;
+        [SerializeField] TMP_Dropdown _micDropdown;
+        [SerializeField] Button _settingsGearBtn;
+        [SerializeField] Button _settingsSaveBtn;
+        [SerializeField] Button _settingsCloseBtn;
+        [SerializeField] TextMeshProUGUI _welcomeTitle;
+        [SerializeField] TextMeshProUGUI _welcomeSub;
+        [SerializeField] Button _loginBtn;
+        [SerializeField] Button _registerBtn;
+        [SerializeField] Button _checkBBtn;
+        [SerializeField] Button _logoutBtn;
+        [SerializeField] TextMeshProUGUI _reportTitle;
+        [SerializeField] TextMeshProUGUI _reportMeta;
+        [SerializeField] TextMeshProUGUI _reportBody;
+        [SerializeField] Button _reportBackBtn;
+        [SerializeField] Button _confirmBtn;
+        [SerializeField] Button _confirmBackBtn;
+        [SerializeField] Button _pickRefreshBtn;
+        [SerializeField] Button _pickBackBtn;
+        [SerializeField] Button _recordBtn;
+        [SerializeField] TextMeshProUGUI _recordBtnLabel;
+        [SerializeField] Button _sendTextBtn;
+        [SerializeField] Button _eyeBtn;
+        [SerializeField] TextMeshProUGUI _recordHint;
         bool _showPass;
         bool _busy;
         bool _recording;
@@ -119,13 +155,15 @@ namespace Empathia
         AudioClip _micClip;
         bool _built;
         Vector2 _lastScreen;
-        enum UiScreen { Login, Confirm, Health, PickStudent }
+        Coroutine _fitCardCo;
+        enum UiScreen { Login, Confirm, Health, PickStudent, Report }
         UiScreen _screen = UiScreen.Login;
 
         void Awake()
         {
             try
             {
+                SilenceConvaiConnection();
                 _api = GetComponent<EmpathiaApiClient>() ?? gameObject.AddComponent<EmpathiaApiClient>();
                 _audio = GetComponent<AudioSource>() ?? gameObject.AddComponent<AudioSource>();
                 _audio.playOnAwake = false;
@@ -138,11 +176,28 @@ namespace Empathia
                 _mouth = GetComponent<EmpathiaMouthDriver>() ?? gameObject.AddComponent<EmpathiaMouthDriver>();
                 EnsureEventSystem();
                 ApplyDisplayQuality();
-                BuildUi();
-                ApplyLayout();
-                SetLoginStatus("Comprobando conexión con B…");
-                StartCoroutine(CheckConnectionToB(silent: false));
-                Debug.Log("[Empathia] UI 1920x1080 @60 · Login → Salud. Game view 1920x1080 + Play.");
+                EmpathiaAuthState.RestoreSettings();
+                _uiFromScene = _loginView != null;
+                if (_uiFromScene)
+                {
+                    _built = true;
+                    ApplyRuntimeSkin();
+                    BindMouthFromScene();
+                    EnsureReportView();
+                    WireUi();
+                    ShowScreen(UiScreen.Login);
+                }
+                else
+                {
+                    BuildUi();
+                    ApplyLayout();
+                }
+                SetLoginStatus("Inicia sesión del psicoorientador.");
+                StartCoroutine(CheckConnectionToB(silent: true));
+                Debug.Log(_uiFromScene
+                    ? "[Empathia] UI desde la escena Login. Mueve el Canvas en Hierarchy."
+                    : "[Empathia] UI creada por código. Menú EmpathIA → Guardar UI en la escena Login.");
+                Camera.onPreCull += LockSessionCamera;
             }
             catch (System.Exception ex)
             {
@@ -150,13 +205,81 @@ namespace Empathia
             }
         }
 
+        void OnDestroy()
+        {
+            Camera.onPreCull -= LockSessionCamera;
+            if (_bodyGraph.IsValid())
+                _bodyGraph.Destroy();
+        }
+
+        void LockSessionCamera(Camera cam)
+        {
+            if (!_holdCam || cam == null || cam != _framedCam)
+                return;
+            cam.transform.position = _camHoldPos;
+            cam.transform.LookAt(_camLook);
+            cam.fieldOfView = 18f;
+            cam.rect = new Rect(0.56f, 0f, 0.44f, 1f);
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = new Color(0.86f, 0.9f, 0.98f, 1f);
+            cam.usePhysicalProperties = false;
+            SharpenSessionCamera(cam);
+        }
+
+        static void SharpenSessionCamera(Camera cam)
+        {
+            var extra = cam.GetComponent<UniversalAdditionalCameraData>();
+            if (extra != null)
+            {
+                extra.renderPostProcessing = false;
+                extra.antialiasing = AntialiasingMode.None;
+                extra.dithering = false;
+            }
+
+            var volumes = FindObjectsByType<Volume>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (var i = 0; i < volumes.Length; i++)
+            {
+                var volume = volumes[i];
+                if (volume == null)
+                    continue;
+                var profile = volume.profile;
+                if (profile == null)
+                    continue;
+                if (profile.TryGet(out DepthOfField dof))
+                    dof.active = false;
+                if (profile.TryGet(out MotionBlur motion))
+                    motion.active = false;
+            }
+        }
+
         void Update()
         {
-            if (!_built)
+            if (!_built || _uiFromScene)
                 return;
             var size = new Vector2(Screen.width, Screen.height);
             if (size != _lastScreen)
                 ApplyLayout();
+        }
+
+        void LateUpdate()
+        {
+            if (_screen != UiScreen.Health)
+                return;
+            CropChatBackground();
+            FadeBodyClip();
+            if (!_holdCam || _framedCam == null)
+                return;
+            _framedCam.transform.position = _camHoldPos;
+            _framedCam.transform.LookAt(_camLook);
+            _framedCam.fieldOfView = 18f;
+            _framedCam.rect = new Rect(0.56f, 0f, 0.44f, 1f);
+            _framedCam.clearFlags = CameraClearFlags.SolidColor;
+            _framedCam.backgroundColor = new Color(0.86f, 0.9f, 0.98f, 1f);
+            foreach (var behaviour in _framedCam.GetComponentsInParent<MonoBehaviour>(true))
+            {
+                if (behaviour != null && behaviour.GetType().Name == "ConvaiOrbitCamera")
+                    behaviour.enabled = false;
+            }
         }
 
         void EnsureEventSystem()
@@ -320,7 +443,17 @@ namespace Empathia
                         pixels[y * s + x] = col;
             }
 
-            if (kind == "user")
+            if (kind == "gear")
+            {
+                for (var i = 0; i < 8; i++)
+                {
+                    var ang = i * Mathf.PI * 2f / 8f;
+                    Disc(32 + Mathf.Cos(ang) * 20f, 32 + Mathf.Sin(ang) * 20f, 7f, ink);
+                }
+                Disc(32, 32, 16, ink);
+                Disc(32, 32, 7, clear);
+            }
+            else if (kind == "user")
             {
                 Disc(32, 42, 10, ink);
                 Disc(32, 18, 14, ink);
@@ -411,6 +544,9 @@ namespace Empathia
             BuildPickStudentView(canvasGo.transform);
             BuildConfirmView(canvasGo.transform);
             BuildHealthView(canvasGo.transform);
+            BuildReportView(canvasGo.transform);
+            BuildSettingsView(canvasGo.transform);
+            BuildSettingsGear(canvasGo.transform);
             BuildAlertModal(canvasGo.transform);
             ShowScreen(UiScreen.Login);
         }
@@ -428,31 +564,25 @@ namespace Empathia
             var card = CreateImage(_loginView.transform, "Card", CardGlass);
             ApplyRounded(card, RoundSprite(256, 48), 1.05f);
             _cardRt = card.rectTransform;
+            var cardLayout = card.gameObject.AddComponent<VerticalLayoutGroup>();
+            cardLayout.padding = new RectOffset(48, 48, 40, 36);
+            cardLayout.spacing = 18;
+            cardLayout.childAlignment = TextAnchor.UpperCenter;
+            cardLayout.childControlWidth = true;
+            cardLayout.childControlHeight = true;
+            cardLayout.childForceExpandWidth = true;
+            cardLayout.childForceExpandHeight = false;
+            var cardFitter = card.gameObject.AddComponent<ContentSizeFitter>();
+            cardFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+            cardFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             PlaceLoginCard();
 
-            var content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup));
-            content.transform.SetParent(_cardRt, false);
-            var contentRt = content.GetComponent<RectTransform>();
-            StretchFull(contentRt);
-            contentRt.offsetMin = new Vector2(44, 28);
-            contentRt.offsetMax = new Vector2(-44, -28);
-            var v = content.GetComponent<VerticalLayoutGroup>();
-            v.spacing = 16;
-            v.childAlignment = TextAnchor.UpperCenter;
-            v.childControlWidth = true;
-            v.childControlHeight = true;
-            v.childForceExpandWidth = true;
-            v.childForceExpandHeight = false;
-            v.padding = new RectOffset(0, 0, 4, 0);
-
-            _baseUrl = AddCompactInput(content.transform, "Servidor", EmpathiaAuthState.BaseUrl);
-
-            _studentLoginPanel = CreateLoginPanel(content.transform, "StudentFields");
+            _studentLoginPanel = CreateLoginPanel(_cardRt, "StudentFields");
             AddLabel(_studentLoginPanel.transform, "Elige tu nombre", 20, FontStyles.Bold, Navy, 28, TextAlignmentOptions.Center);
-            _loginListContent = CreateScrollList(_studentLoginPanel.transform, 260);
+            _loginListContent = CreateScrollList(_studentLoginPanel.transform, 180);
             _refreshListBtn = AddOutlineButton(_studentLoginPanel.transform, "Actualizar lista", 50, () => StartCoroutine(LoadDirectoryList()));
 
-            _registerPanel = CreateLoginPanel(content.transform, "RegisterFields");
+            _registerPanel = CreateLoginPanel(_cardRt, "RegisterFields");
             _regDoc = AddIconInput(_registerPanel.transform, "Número de documento", "", "lock", false);
             _regName = AddIconInput(_registerPanel.transform, "Nombre y apellido", "", "user", false);
             _regCampus = AddOptionDropdown(
@@ -474,18 +604,18 @@ namespace Empathia
                 "mañana",
                 "tarde");
             _createStudentBtn = AddGradientButton(_registerPanel.transform, "Crear perfil", 64, OnCreateStudent, 22f);
-            _backToLoginBtn = AddOutlineButton(_registerPanel.transform, "Volver", 54, () => ShowRegisterForm(false));
+            _backToLoginBtn = AddOutlineButton(_registerPanel.transform, "Volver", 56, () => ShowRegisterForm(false));
             _registerPanel.SetActive(false);
 
-            _adultLoginPanel = CreateLoginPanel(content.transform, "AdultFields");
+            _adultLoginPanel = CreateLoginPanel(_cardRt, "AdultFields");
+            AddLabel(_adultLoginPanel.transform, "Iniciar sesión", 26, FontStyles.Bold, Navy, 40, TextAlignmentOptions.Center);
             _user = AddIconInput(_adultLoginPanel.transform, "Usuario del psicoorientador", "orientador1", "user", false);
             _pass = AddIconInput(_adultLoginPanel.transform, "Contraseña", "password", "lock", true);
-            _checkBBtn = AddOutlineButton(_adultLoginPanel.transform, "Probar conexión B", 48, OnCheckConnectionB);
-            _loginBtn = AddGradientButton(_adultLoginPanel.transform, "Iniciar sesión", 58, OnLogin);
+            _loginBtn = AddGradientButton(_adultLoginPanel.transform, "Iniciar sesión", 64, OnLogin, 22f);
 
-            _registerBtn = AddOutlineButton(content.transform, "Registrarse", 62, OnRegister);
-            _loginHint = AddLabel(content.transform, "La lista muestra solo el nombre. Al entrar usa todos los datos del perfil.", 16, FontStyles.Normal, Muted, 36, TextAlignmentOptions.Center);
-            _loginStatus = AddLabel(content.transform, "", 14, FontStyles.Normal, Muted, 24, TextAlignmentOptions.Center);
+            _registerBtn = AddOutlineButton(_cardRt, "Registrarse", 58, OnRegister);
+            _loginHint = AddLabel(_cardRt, "La lista muestra solo el nombre. Al entrar usa todos los datos del perfil.", 16, FontStyles.Normal, Muted, 36, TextAlignmentOptions.Center);
+            _loginStatus = AddLabel(_cardRt, "", 15, FontStyles.Normal, Muted, 26, TextAlignmentOptions.Center);
             ShowStaffLogin(true);
         }
 
@@ -494,15 +624,13 @@ namespace Empathia
             var go = new GameObject(name, typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
             go.transform.SetParent(parent, false);
             var v = go.GetComponent<VerticalLayoutGroup>();
-            v.spacing = 14;
+            v.spacing = 16;
             v.childAlignment = TextAnchor.UpperCenter;
             v.childControlWidth = true;
             v.childControlHeight = true;
             v.childForceExpandWidth = true;
             v.childForceExpandHeight = false;
             go.GetComponent<LayoutElement>().flexibleWidth = 1f;
-            var fitter = go.AddComponent<ContentSizeFitter>();
-            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             return go;
         }
 
@@ -522,6 +650,8 @@ namespace Empathia
                 if (_registerBtn != null)
                     _registerBtn.gameObject.SetActive(false);
                 SetLoginStatus("Inicia sesión del psicoorientador.");
+                RefreshLoginCardLayout();
+                QueueLoginCardFit();
                 return;
             }
 
@@ -553,6 +683,8 @@ namespace Empathia
                 : "Elige tu nombre en la lista.");
             if (!register)
                 StartCoroutine(LoadDirectoryList());
+            RefreshLoginCardLayout();
+            QueueLoginCardFit();
         }
 
         void RefreshRegisterGrades()
@@ -619,9 +751,7 @@ namespace Empathia
         void OnCreateStudent()
         {
             if (_busy) return;
-            EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://127.0.0.1:8000/api/v1"
-                : _baseUrl.text.Trim();
+            ApplyServerFromUi();
 
             var documento = _regDoc != null ? _regDoc.text.Trim() : "";
             var nombreCompleto = _regName != null ? _regName.text.Trim() : "";
@@ -711,9 +841,7 @@ namespace Empathia
             if (_loginListContent == null)
                 yield break;
 
-            EmpathiaAuthState.BaseUrl = _baseUrl != null && !string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? _baseUrl.text.Trim()
-                : EmpathiaAuthState.BaseUrl;
+            ApplyServerFromUi();
 
             SetBusy(true);
             SetLoginStatus("Cargando estudiantes…");
@@ -736,6 +864,7 @@ namespace Empathia
                 _directoryStudents = new StudentListItem[0];
                 SetLoginStatus("");
                 ShowAlertModal("No se pudo cargar la lista", msg);
+                RefreshLoginCardLayout();
                 yield break;
             }
 
@@ -751,6 +880,10 @@ namespace Empathia
             SetLoginStatus(_directoryStudents.Length == 0
                 ? "No hay estudiantes. Pulsa Registrarse."
                 : "Elige tu nombre. Hay " + _directoryStudents.Length + " perfil(es).");
+            var rows = _directoryStudents.Length;
+            SetStudentScrollHeight(rows == 0 ? 80f : Mathf.Clamp(rows * 64f + 16f, 80f, 180f));
+            RefreshLoginCardLayout();
+            QueueLoginCardFit();
         }
 
         void OnPickDirectoryStudent(StudentListItem item)
@@ -782,9 +915,7 @@ namespace Empathia
         void OnCheckConnectionB()
         {
             if (_busy) return;
-            EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://127.0.0.1:8000/api/v1"
-                : _baseUrl.text.Trim();
+            ApplyServerFromUi();
             StartCoroutine(CheckConnectionToB(silent: false));
         }
 
@@ -792,7 +923,10 @@ namespace Empathia
         {
             SetBusy(true);
             if (!silent)
-                SetLoginStatus("Comprobando B en " + EmpathiaAuthState.BaseUrl + " …");
+            {
+                SetLoginStatus("Comprobando el servidor…");
+                SetSettingsStatus("Comprobando el servidor…");
+            }
 
             var ok = false;
             var msg = "";
@@ -809,10 +943,14 @@ namespace Empathia
                 if (!silent && !string.IsNullOrEmpty(EmpathiaAuthState.AdultToken))
                     yield return LoadDirectoryList();
                 else if (!silent)
+                {
                     SetLoginStatus("Conexión OK. Inicia sesión del psicoorientador.");
+                    SetSettingsStatus("Conexión OK.");
+                }
             }
             else
             {
+                SetSettingsStatus("Sin conexión. Revisa la dirección del servidor.");
                 ShowAlertModal("Sin conexión", msg);
                 Debug.LogWarning("[Empathia] " + msg);
             }
@@ -849,7 +987,7 @@ namespace Empathia
             v.childForceExpandHeight = false;
 
             AddLabel(content.transform, "Elegir estudiante", 26, FontStyles.Bold, Navy, 36, TextAlignmentOptions.Center);
-            AddLabel(content.transform, "Perfiles activos creados por el admin en B.", 14, FontStyles.Normal, Muted, 24, TextAlignmentOptions.Center);
+            AddLabel(content.transform, "Elige el perfil del estudiante.", 14, FontStyles.Normal, Muted, 24, TextAlignmentOptions.Center);
 
             var scrollGo = new GameObject("Scroll", typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(LayoutElement));
             scrollGo.transform.SetParent(content.transform, false);
@@ -888,12 +1026,8 @@ namespace Empathia
             _studentListContent = list.transform;
 
             _pickStatus = AddLabel(content.transform, "", 13, FontStyles.Normal, Muted, 28, TextAlignmentOptions.Center);
-            AddOutlineButton(content.transform, "Actualizar lista", 48, () => StartCoroutine(LoadStudentList()));
-            AddOutlineButton(content.transform, "Volver", 48, () =>
-            {
-                EmpathiaAuthState.ClearAll();
-                ShowScreen(UiScreen.Login);
-            });
+            _pickRefreshBtn = AddOutlineButton(content.transform, "Actualizar lista", 48, () => StartCoroutine(LoadStudentList()));
+            _pickBackBtn = AddOutlineButton(content.transform, "Volver", 48, OnPickBack);
         }
 
         void BuildConfirmView(Transform canvas)
@@ -926,11 +1060,11 @@ namespace Empathia
             v.childForceExpandWidth = true;
             v.childForceExpandHeight = false;
 
-            AddLabel(content.transform, "Salud", 14, FontStyles.Bold, Purple, 20, TextAlignmentOptions.Center);
+            AddLabel(content.transform, "EmpathIA", 14, FontStyles.Bold, Purple, 20, TextAlignmentOptions.Center);
             AddLabel(content.transform, "Inicio de sesión confirmado", 26, FontStyles.Bold, Navy, 36, TextAlignmentOptions.Center);
             AddLabel(content.transform, "Tu cuenta está lista. Continúa para entrar a tu espacio de bienestar.", 15, FontStyles.Normal, Muted, 48, TextAlignmentOptions.Center);
-            _confirmBtn = AddGradientButton(content.transform, "Entrar a Salud", 64, OnConfirmEnterHealth);
-            AddOutlineButton(content.transform, "Volver", 56, () => ShowScreen(UiScreen.Login));
+            _confirmBtn = AddGradientButton(content.transform, "Continuar", 64, OnConfirmEnterHealth);
+            _confirmBackBtn = AddOutlineButton(content.transform, "Volver", 56, () => ShowScreen(UiScreen.Login));
         }
 
         void BuildHealthView(Transform canvas)
@@ -942,8 +1076,10 @@ namespace Empathia
             var card = CreateImage(_healthView.transform, "HealthCard", CardGlass);
             ApplyRounded(card, RoundSprite(256, 48), 1.05f);
             _healthRt = card.rectTransform;
-            _healthRt.anchorMin = _healthRt.anchorMax = _healthRt.pivot = new Vector2(0.5f, 0.55f);
-            _healthRt.sizeDelta = new Vector2(780, 480);
+            _healthRt.anchorMin = _healthRt.anchorMax = new Vector2(0.03f, 0.5f);
+            _healthRt.pivot = new Vector2(0f, 0.5f);
+            _healthRt.anchoredPosition = Vector2.zero;
+            _healthRt.sizeDelta = new Vector2(860, 900);
 
             var content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup));
             content.transform.SetParent(_healthRt, false);
@@ -959,27 +1095,230 @@ namespace Empathia
             v.childForceExpandWidth = true;
             v.childForceExpandHeight = false;
 
-            AddLabel(content.transform, "Pestaña Salud", 13, FontStyles.Bold, Purple, 18, TextAlignmentOptions.Center);
             BindMouthHint(content.transform);
             _welcomeTitle = AddLabel(content.transform, "¡Bienvenido!", 34, FontStyles.Bold, Navy, 44, TextAlignmentOptions.Center);
             _welcomeSub = AddLabel(content.transform, "Este es tu espacio de acompañamiento emocional.", 16, FontStyles.Normal, Muted, 28, TextAlignmentOptions.Center);
-            _recordHint = AddLabel(content.transform, "Grabar = tu voz → texto local → B", 14, FontStyles.Normal, Muted, 24, TextAlignmentOptions.Center);
+            _recordHint = AddLabel(content.transform, "Pulsa Hablar, di algo y luego Detener.", 14, FontStyles.Normal, Muted, 24, TextAlignmentOptions.Center);
 
-            _recordBtn = AddGradientButton(content.transform, "Grabar audio", 72, OnRecordPressed, 22f);
+            _recordBtn = AddGradientButton(content.transform, "Hablar", 72, OnRecordPressed, 22f);
             var textTf = _recordBtn.transform.Find("Text");
             _recordBtnLabel = textTf != null
                 ? textTf.GetComponent<TextMeshProUGUI>()
                 : _recordBtn.GetComponentInChildren<TextMeshProUGUI>();
 
-            _typedMessage = AddCompactInput(content.transform, "O escribe un mensaje a B", "");
-            _sendTextBtn = AddOutlineButton(content.transform, "Enviar texto a B", 48, OnSendTypedText);
+            _typedMessage = AddCompactInput(content.transform, "Escribe un mensaje", "");
+            _sendTextBtn = AddOutlineButton(content.transform, "Enviar", 48, OnSendTypedText);
 
-            _state = AddLabel(content.transform, "Estado UI: idle", 13, FontStyles.Bold, Navy, 20, TextAlignmentOptions.Center);
+            _state = AddLabel(content.transform, "", 13, FontStyles.Bold, Navy, 20, TextAlignmentOptions.Center);
+            if (_state != null)
+                _state.gameObject.SetActive(false);
             _status = AddLabel(content.transform, "", 13, FontStyles.Normal, Muted, 36, TextAlignmentOptions.Center);
-            _transcript = AddLabel(content.transform, "Tu texto: (aún no hay)", 13, FontStyles.Normal, Navy, 40, TextAlignmentOptions.Center);
-            _reply = AddLabel(content.transform, "Respuesta EmpathIA: (sin respuesta)", 13, FontStyles.Normal, new Color(0.2f, 0.55f, 0.4f), 40, TextAlignmentOptions.Center);
+            AddLabel(content.transform, "Tú", 12, FontStyles.Bold, Muted, 18, TextAlignmentOptions.Center);
+            _transcript = AddLabel(content.transform, "(aún no hay mensaje)", 15, FontStyles.Normal, Navy, 44, TextAlignmentOptions.Center);
+            AddLabel(content.transform, "EmpathIA", 12, FontStyles.Bold, Muted, 18, TextAlignmentOptions.Center);
+            _reply = AddLabel(content.transform, "(sin respuesta)", 15, FontStyles.Normal, new Color(0.2f, 0.55f, 0.4f), 48, TextAlignmentOptions.Center);
+            _logoutBtn = AddOutlineButton(content.transform, "Terminar conversación", 48, OnEndConversation);
 
             _labRt = _healthRt;
+        }
+
+        void EnsureReportView()
+        {
+            if (_reportView != null)
+                return;
+            Transform canvas = null;
+            if (_healthView != null)
+                canvas = _healthView.transform.parent;
+            else if (_loginView != null)
+                canvas = _loginView.transform.parent;
+            if (canvas == null)
+                return;
+            BuildReportView(canvas);
+        }
+
+        void BuildReportView(Transform canvas)
+        {
+            _reportView = new GameObject("ReportView", typeof(RectTransform));
+            _reportView.transform.SetParent(canvas, false);
+            StretchFull(_reportView.GetComponent<RectTransform>());
+
+            var card = CreateImage(_reportView.transform, "ReportCard", CardGlass);
+            ApplyRounded(card, RoundSprite(256, 48), 1.05f);
+            var cardRt = card.rectTransform;
+            cardRt.anchorMin = cardRt.anchorMax = cardRt.pivot = new Vector2(0.5f, 0.50f);
+            cardRt.sizeDelta = new Vector2(780, 640);
+
+            var content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup));
+            content.transform.SetParent(cardRt, false);
+            var contentRt = content.GetComponent<RectTransform>();
+            StretchFull(contentRt);
+            contentRt.offsetMin = new Vector2(40, 28);
+            contentRt.offsetMax = new Vector2(-40, -28);
+            var v = content.GetComponent<VerticalLayoutGroup>();
+            v.spacing = 10;
+            v.childAlignment = TextAnchor.UpperCenter;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+
+            AddLabel(content.transform, "EmpathIA", 14, FontStyles.Bold, Purple, 20, TextAlignmentOptions.Center);
+            _reportTitle = AddLabel(content.transform, "Reporte de esta charla", 26, FontStyles.Bold, Navy, 40, TextAlignmentOptions.Center);
+            _reportMeta = AddLabel(content.transform, "", 15, FontStyles.Normal, Muted, 56, TextAlignmentOptions.Center);
+            var list = CreateScrollList(content.transform, 300);
+            _reportBody = AddLabel(list, "El resumen aparecerá aquí.", 15, FontStyles.Normal, Navy, 80, TextAlignmentOptions.TopLeft);
+            var bodyLe = _reportBody.GetComponent<LayoutElement>();
+            bodyLe.minHeight = 80;
+            bodyLe.preferredHeight = -1;
+            bodyLe.flexibleHeight = 0;
+            var fitter = _reportBody.gameObject.AddComponent<ContentSizeFitter>();
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+            _reportBackBtn = AddGradientButton(content.transform, "Volver a la lista", 56, OnReportBack);
+            _reportView.SetActive(false);
+        }
+
+        void TogglePassword()
+        {
+            if (_pass == null)
+                return;
+            _showPass = !_showPass;
+            _pass.contentType = _showPass
+                ? TMP_InputField.ContentType.Standard
+                : TMP_InputField.ContentType.Password;
+            _pass.ForceLabelUpdate();
+            if (_eyeBtn == null)
+                return;
+            var eyeTf = _eyeBtn.transform.Find("EyeIcon");
+            var eyeImg = eyeTf != null ? eyeTf.GetComponent<Image>() : _eyeBtn.GetComponentInChildren<Image>();
+            if (eyeImg != null && eyeImg.gameObject != _eyeBtn.gameObject)
+                eyeImg.color = _showPass ? Purple : Muted;
+        }
+
+        void OnPickBack()
+        {
+            EmpathiaAuthState.ClearAll();
+            ShowScreen(UiScreen.Login);
+        }
+
+        public bool HasSceneUi => _loginView != null;
+
+        public void BakeUiInEditor()
+        {
+            if (_loginView != null)
+                return;
+            _built = false;
+            _uiFromScene = false;
+            BuildUi();
+        }
+
+        void BindMouthFromScene()
+        {
+            if (_mouth == null)
+                _mouth = GetComponent<EmpathiaMouthDriver>() ?? gameObject.AddComponent<EmpathiaMouthDriver>();
+            var mouthTf = transform.Find("EmpathiaLoginCanvas/HealthView/HealthCard/Content/MouthHint/Mouth");
+            if (mouthTf == null)
+            {
+                var images = GetComponentsInChildren<Image>(true);
+                for (var i = 0; i < images.Length; i++)
+                {
+                    if (images[i] != null && images[i].gameObject.name == "Mouth")
+                    {
+                        _mouth.BindUi(images[i]);
+                        return;
+                    }
+                }
+                return;
+            }
+            var mouth = mouthTf.GetComponent<Image>();
+            if (mouth != null)
+                _mouth.BindUi(mouth);
+        }
+
+        void WireUi()
+        {
+            BindClick(_refreshListBtn, () => StartCoroutine(LoadDirectoryList()));
+            BindClick(_createStudentBtn, OnCreateStudent);
+            BindClick(_backToLoginBtn, () => ShowRegisterForm(false));
+            BindClick(_loginBtn, OnLogin);
+            BindClick(_registerBtn, OnRegister);
+            BindClick(_checkBBtn, OnCheckConnectionB);
+            BindClick(_confirmBtn, OnConfirmEnterHealth);
+            BindClick(_confirmBackBtn, () => ShowScreen(UiScreen.Login));
+            BindClick(_pickRefreshBtn, () => StartCoroutine(LoadStudentList()));
+            BindClick(_pickBackBtn, OnPickBack);
+            BindClick(_recordBtn, OnRecordPressed);
+            BindClick(_sendTextBtn, OnSendTypedText);
+            SetButtonLabel(_logoutBtn, "Terminar conversación");
+            BindClick(_logoutBtn, OnEndConversation);
+            BindClick(_reportBackBtn, OnReportBack);
+            BindClick(_settingsGearBtn, ToggleSettings);
+            BindClick(_settingsSaveBtn, OnSaveSettings);
+            BindClick(_settingsCloseBtn, () => ShowSettings(false));
+            BindClick(_alertCloseBtn, HideAlertModal);
+            BindClick(_eyeBtn, TogglePassword);
+        }
+
+        static void BindClick(Button button, UnityEngine.Events.UnityAction action)
+        {
+            if (button == null || action == null)
+                return;
+            button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(action);
+        }
+
+        static void SetButtonLabel(Button button, string label)
+        {
+            if (button == null || string.IsNullOrEmpty(label))
+                return;
+            var t = button.GetComponentInChildren<TextMeshProUGUI>(true);
+            if (t != null)
+                t.text = label;
+        }
+
+        public void ApplyRuntimeSkin()
+        {
+            var images = GetComponentsInChildren<Image>(true);
+            for (var i = 0; i < images.Length; i++)
+            {
+                var img = images[i];
+                if (img == null)
+                    continue;
+                var n = img.gameObject.name;
+                if (n == "Card" || n == "ConfirmCard" || n == "HealthCard" || n == "SettingsCard"
+                    || n == "AlertCard" || n == "PickCard")
+                    ApplyRounded(img, RoundSprite(256, 48), 1.05f);
+                else if (n == "CardShadow")
+                    ApplyRounded(img, RoundSprite(256, 48), 1.0f);
+                else if (n == "Mouth")
+                    ApplyRounded(img, RoundSprite(64, 24), 1.4f);
+                else if (n == "SettingsGear")
+                    ApplyRounded(img, RoundSprite(128, 48), 1.2f);
+            }
+
+            if (_loginBtn != null) SkinGradient(_loginBtn);
+            if (_createStudentBtn != null) SkinGradient(_createStudentBtn);
+            if (_confirmBtn != null) SkinGradient(_confirmBtn);
+            if (_recordBtn != null) SkinGradient(_recordBtn);
+            if (_settingsSaveBtn != null) SkinGradient(_settingsSaveBtn);
+            if (_alertCloseBtn != null) SkinGradient(_alertCloseBtn);
+
+            if (_settingsGearBtn != null)
+            {
+                var iconTf = _settingsGearBtn.transform.Find("Icon");
+                var icon = iconTf != null ? iconTf.GetComponent<Image>() : null;
+                if (icon != null)
+                    icon.sprite = BuildIconSprite("gear");
+            }
+        }
+
+        void SkinGradient(Button button)
+        {
+            var img = button.GetComponent<Image>();
+            if (img == null)
+                return;
+            img.sprite = GradientButtonSprite();
+            img.type = Image.Type.Sliced;
+            img.pixelsPerUnitMultiplier = 1.05f;
         }
 
         void BindMouthHint(Transform parent)
@@ -1033,24 +1372,519 @@ namespace Empathia
 
             if (_recordBtnLabel != null)
             {
-                _recordBtnLabel.text = recording ? "Detener audio" : "Grabar audio";
+                _recordBtnLabel.text = recording ? "Detener" : "Hablar";
                 _recordBtnLabel.ForceMeshUpdate();
             }
 
             if (_recordHint != null)
                 _recordHint.text = recording
-                    ? "Grabando tu mic… Detener transcribe en local"
-                    : "Grabar = tu voz → texto local → B";
+                    ? "Grabando… pulsa Detener cuando termines."
+                    : "Pulsa Hablar, di algo y luego Detener.";
         }
 
         void ShowScreen(UiScreen screen)
         {
             _screen = screen;
             HideAlertModal();
+            ShowSettings(false);
             if (_loginView != null) _loginView.SetActive(screen == UiScreen.Login);
             if (_pickStudentView != null) _pickStudentView.SetActive(screen == UiScreen.PickStudent);
             if (_confirmView != null) _confirmView.SetActive(screen == UiScreen.Confirm);
             if (_healthView != null) _healthView.SetActive(screen == UiScreen.Health);
+            if (_reportView != null) _reportView.SetActive(screen == UiScreen.Report);
+            ApplyChatStage(screen == UiScreen.Health);
+        }
+
+        void ApplyChatStage(bool chat)
+        {
+            if (_bgRt == null)
+            {
+                var bg = GameObject.Find("Background");
+                if (bg != null)
+                    _bgRt = bg.GetComponent<RectTransform>();
+            }
+
+            if (_healthRt == null && _healthView != null)
+            {
+                var card = _healthView.transform.Find("HealthCard");
+                if (card != null)
+                    _healthRt = card as RectTransform;
+            }
+
+            CropChatBackground(chat);
+            if (!chat && _framedCam != null)
+            {
+                _holdCam = false;
+                _framedCam.rect = new Rect(0f, 0f, 1f, 1f);
+            }
+
+            if (_healthRt != null && chat)
+            {
+                _healthRt.anchorMin = new Vector2(0.03f, 0.06f);
+                _healthRt.anchorMax = new Vector2(0.52f, 0.94f);
+                _healthRt.pivot = new Vector2(0.5f, 0.5f);
+                _healthRt.offsetMin = Vector2.zero;
+                _healthRt.offsetMax = Vector2.zero;
+            }
+
+            SetSessionCharacterVisible(chat);
+            if (chat)
+                StartCoroutine(FrameSessionCharacter());
+        }
+
+        void CropChatBackground()
+        {
+            CropChatBackground(true);
+        }
+
+        void CropChatBackground(bool chat)
+        {
+            var rects = FindObjectsByType<RectTransform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (var i = 0; i < rects.Length; i++)
+            {
+                var rt = rects[i];
+                if (rt == null || !rt.gameObject.scene.IsValid())
+                    continue;
+                var raw = rt.GetComponent<RawImage>();
+                if (raw == null)
+                    continue;
+                var fullBleed = rt.anchorMin.x <= 0.02f && rt.anchorMax.x >= 0.9f && rt.anchorMax.y >= 0.9f;
+                if (rt.name != "Background" && !fullBleed)
+                    continue;
+                if (chat)
+                {
+                    rt.anchorMin = Vector2.zero;
+                    rt.anchorMax = new Vector2(0.56f, 1f);
+                    rt.offsetMin = Vector2.zero;
+                    rt.offsetMax = Vector2.zero;
+                    raw.raycastTarget = false;
+                }
+                else if (rt.name == "Background")
+                {
+                    StretchFull(rt);
+                }
+            }
+        }
+
+        IEnumerator FrameSessionCharacter()
+        {
+            yield return null;
+            var avatar = FindNamedInScene("Convai Character");
+            if (avatar == null)
+                avatar = FindNamedInScene("personaje");
+            var leftover = FindNamedInScene("personaje");
+            if (leftover != null && leftover != avatar)
+                leftover.SetActive(false);
+            var cam = FindSessionCamera();
+            if (avatar != null)
+                ActivateChain(avatar);
+            if (cam != null)
+                ActivateChain(cam.gameObject);
+            if (cam != null)
+                cam.enabled = true;
+            if (avatar == null || cam == null)
+                yield break;
+            yield return null;
+
+            foreach (var behaviour in cam.GetComponentsInParent<MonoBehaviour>(true))
+            {
+                if (behaviour != null && behaviour.GetType().Name == "ConvaiOrbitCamera")
+                    behaviour.enabled = false;
+            }
+
+            var renderers = avatar.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            if (renderers == null || renderers.Length == 0)
+                yield break;
+
+            for (var r = 0; r < renderers.Length; r++)
+            {
+                if (renderers[r] == null)
+                    continue;
+                renderers[r].enabled = true;
+                renderers[r].gameObject.SetActive(true);
+            }
+
+            var bounds = renderers[0].bounds;
+            for (var i = 1; i < renderers.Length; i++)
+            {
+                if (renderers[i] != null)
+                    bounds.Encapsulate(renderers[i].bounds);
+            }
+
+            var look = bounds.center + Vector3.up * (bounds.extents.y * 0.68f);
+            var toCamera = cam.transform.position - look;
+            toCamera.y = 0f;
+            if (toCamera.sqrMagnitude < 0.01f)
+                toCamera = Vector3.back;
+            avatar.transform.rotation = Quaternion.LookRotation(toCamera.normalized, Vector3.up);
+
+            cam.fieldOfView = 18f;
+            var dist = Mathf.Clamp(bounds.size.y * 0.5f, 0.48f, 0.95f);
+            SoftenEyeShine(avatar);
+            cam.transform.position = look + avatar.transform.forward * dist;
+            cam.transform.LookAt(look);
+            _camLook = look;
+            _camHoldPos = cam.transform.position;
+            _holdCam = true;
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = new Color(0.86f, 0.9f, 0.98f, 1f);
+            cam.rect = new Rect(0.56f, 0f, 0.44f, 1f);
+            _framedCam = cam;
+            if (!cam.CompareTag("MainCamera"))
+                cam.tag = "MainCamera";
+            EnableEmbodiment(avatar, cam);
+            yield return null;
+            var emotion = avatar.GetComponent<ConvaiEmotionController>();
+            if (emotion != null)
+            {
+                emotion.SetMood("trust", 0.35f, 1.2f);
+            }
+            Debug.Log("[Empathia] Personaje encuadrado: " + avatar.name);
+        }
+
+        static void SilenceConvaiConnection()
+        {
+            var behaviours = FindObjectsByType<MonoBehaviour>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (var i = 0; i < behaviours.Length; i++)
+            {
+                var behaviour = behaviours[i];
+                if (behaviour == null)
+                    continue;
+                var typeName = behaviour.GetType().Name;
+                if (typeName == "ConvaiManager"
+                    || typeName == "ConvaiRoomManager"
+                    || typeName == "ConvaiLipSyncComponent"
+                    || typeName == "ConvaiPlayer"
+                    || typeName == "ConvaiIdleResetDriver"
+                    || typeName == "ConvaiBodyAnimationController")
+                    behaviour.enabled = false;
+                if (typeName == "ConnectionStatusIndicator")
+                    behaviour.gameObject.SetActive(false);
+            }
+        }
+
+        void ApplyReplyEmotion(string reply)
+        {
+            var avatar = GameObject.Find("Convai Character");
+            if (avatar == null)
+                avatar = GameObject.Find("personaje");
+            if (avatar == null)
+                return;
+
+            var emotion = avatar.GetComponent<ConvaiEmotionController>();
+            if (emotion == null)
+                return;
+
+            var label = "trust";
+            var intensity = 0.35f;
+            var text = (reply ?? "").ToLowerInvariant();
+            if (text.Contains("triste") || text.Contains("lo siento") || text.Contains("difícil") || text.Contains("dificil"))
+            {
+                label = "sadness";
+                intensity = 0.45f;
+            }
+            else if (text.Contains("preocup") || text.Contains("miedo") || text.Contains("ansie"))
+            {
+                label = "fear";
+                intensity = 0.4f;
+            }
+            else if (text.Contains("enojo") || text.Contains("molest"))
+            {
+                label = "anger";
+                intensity = 0.4f;
+            }
+            else if (text.Contains("me alegra") || text.Contains("qué bien") || text.Contains("que bien") || text.Contains("feliz"))
+            {
+                label = "joy";
+                intensity = 0.55f;
+            }
+
+            emotion.SetMood(label, intensity * 0.35f, 0.8f);
+        }
+
+        static void SoftenEyeShine(GameObject avatar)
+        {
+            var renderers = avatar.GetComponentsInChildren<Renderer>(true);
+            for (var i = 0; i < renderers.Length; i++)
+            {
+                var renderer = renderers[i];
+                if (renderer == null)
+                    continue;
+                var n = renderer.gameObject.name.ToLowerInvariant();
+                if (!n.Contains("eye") && !n.Contains("tear") && !n.Contains("cornea"))
+                    continue;
+                var mats = renderer.materials;
+                for (var m = 0; m < mats.Length; m++)
+                {
+                    var mat = mats[m];
+                    if (mat == null)
+                        continue;
+                    if (mat.HasProperty("_Smoothness"))
+                        mat.SetFloat("_Smoothness", 0.12f);
+                    if (mat.HasProperty("_Glossiness"))
+                        mat.SetFloat("_Glossiness", 0.12f);
+                    if (mat.HasProperty("_GlossMapScale"))
+                        mat.SetFloat("_GlossMapScale", 0.12f);
+                    if (mat.HasProperty("_Metallic"))
+                        mat.SetFloat("_Metallic", 0f);
+                    if (mat.HasProperty("_SpecularHighlights"))
+                        mat.SetFloat("_SpecularHighlights", 0f);
+                    if (mat.HasProperty("_EnvironmentReflections"))
+                        mat.SetFloat("_EnvironmentReflections", 0f);
+                    if (mat.HasProperty("_SpecularColor"))
+                        mat.SetColor("_SpecularColor", new Color(0.03f, 0.03f, 0.03f, 1f));
+                    if (n.Contains("tear") || n.Contains("occlus"))
+                    {
+                        if (mat.HasProperty("_BaseColor"))
+                        {
+                            var c = mat.GetColor("_BaseColor");
+                            c.a = 0.12f;
+                            mat.SetColor("_BaseColor", c);
+                        }
+                        if (mat.HasProperty("_Color"))
+                        {
+                            var c = mat.GetColor("_Color");
+                            c.a = 0.12f;
+                            mat.SetColor("_Color", c);
+                        }
+                    }
+                }
+            }
+
+            var lights = FindObjectsByType<Light>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (var i = 0; i < lights.Length; i++)
+            {
+                var light = lights[i];
+                if (light == null || light.type != LightType.Directional)
+                    continue;
+                if (light.intensity > 0.85f)
+                    light.intensity = 0.85f;
+            }
+        }
+
+        static void KeepCharacterLocal(GameObject avatar)
+        {
+            var character = avatar.GetComponent<ConvaiCharacter>();
+            if (character == null)
+                return;
+            var flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            var autoConnect = typeof(ConvaiCharacter).GetField("_autoConnect", flags);
+            if (autoConnect != null)
+                autoConnect.SetValue(character, false);
+            var ready = typeof(ConvaiCharacter).GetField("_isCharacterReady", flags);
+            if (ready != null)
+                ready.SetValue(character, true);
+            character.enabled = true;
+        }
+
+        static Animator _bodyAnimator;
+        static AnimationClip _idleClip;
+        static AnimationClip _talkClip;
+        static PlayableGraph _bodyGraph;
+        static AnimationMixerPlayable _bodyMixer;
+        static AnimationClipPlayable _talkPlayable;
+        static float _talkBlend;
+        static float _talkGoal;
+        const float BodyFadeSeconds = 0.85f;
+
+        static void EnsureBodyMotion(GameObject avatar)
+        {
+            var animator = avatar.GetComponentInChildren<Animator>(true);
+            if (animator == null)
+                animator = avatar.AddComponent<Animator>();
+            if (animator.avatar == null || !animator.avatar.isHuman)
+            {
+#if UNITY_EDITOR
+                var assets = UnityEditor.AssetDatabase.LoadAllAssetsAtPath(
+                    "Packages/com.convai.convai-sdk-for-unity/SamplesShared/Characters/Sofia/Sofia.Fbx");
+                for (var i = 0; i < assets.Length; i++)
+                {
+                    if (assets[i] is Avatar human && human.isHuman)
+                    {
+                        animator.avatar = human;
+                        break;
+                    }
+                }
+#endif
+            }
+
+            animator.applyRootMotion = false;
+            animator.runtimeAnimatorController = null;
+            _bodyAnimator = animator;
+
+            var convaiMotion = avatar.GetComponent<ConvaiBodyAnimationController>();
+            if (convaiMotion != null)
+                convaiMotion.enabled = false;
+
+#if UNITY_EDITOR
+            var set = UnityEditor.AssetDatabase.LoadAssetAtPath<ConvaiBodyAnimationSet>(
+                "Packages/com.convai.convai-sdk-for-unity/SamplesShared/Profiles/Embodiment/BodyAnimation/ConvaiBodyAnimationSet_Female.asset");
+            if (set != null)
+            {
+                if (set.Idles != null && set.Idles.Count > 0)
+                    _idleClip = set.Idles[0].Clip;
+                if (set.Talks != null && set.Talks.Count > 0)
+                    _talkClip = set.Talks[0].Clip;
+            }
+#endif
+            EnsureBodyGraph();
+        }
+
+        static void EnsureBodyGraph()
+        {
+            if (_bodyAnimator == null || _idleClip == null || _bodyGraph.IsValid())
+                return;
+
+            _bodyGraph = PlayableGraph.Create("EmpathiaBody");
+            _bodyGraph.SetTimeUpdateMode(DirectorUpdateMode.GameTime);
+            _bodyMixer = AnimationMixerPlayable.Create(_bodyGraph, 2);
+            var idle = AnimationClipPlayable.Create(_bodyGraph, _idleClip);
+            _bodyGraph.Connect(idle, 0, _bodyMixer, 0);
+            if (_talkClip != null)
+            {
+                _talkPlayable = AnimationClipPlayable.Create(_bodyGraph, _talkClip);
+                _bodyGraph.Connect(_talkPlayable, 0, _bodyMixer, 1);
+            }
+
+            _talkBlend = 0f;
+            _talkGoal = 0f;
+            _bodyMixer.SetInputWeight(0, 1f);
+            _bodyMixer.SetInputWeight(1, 0f);
+            var output = AnimationPlayableOutput.Create(_bodyGraph, "Body", _bodyAnimator);
+            output.SetSourcePlayable(_bodyMixer);
+            _bodyGraph.Play();
+        }
+
+        static void FadeBodyClip()
+        {
+            if (!_bodyGraph.IsValid() || !_bodyMixer.IsValid())
+                return;
+            var step = Time.deltaTime / BodyFadeSeconds;
+            _talkBlend = Mathf.MoveTowards(_talkBlend, _talkGoal, step);
+            var talk = Mathf.SmoothStep(0f, 1f, _talkBlend);
+            _bodyMixer.SetInputWeight(0, 1f - talk);
+            _bodyMixer.SetInputWeight(1, talk);
+        }
+
+        void NotifyBodySpeaking(bool speaking)
+        {
+            var avatar = GameObject.Find("Convai Character");
+            if (avatar == null)
+                avatar = GameObject.Find("personaje");
+            if (avatar == null)
+                return;
+
+            if (_bodyAnimator == null)
+                EnsureBodyMotion(avatar);
+            EnsureBodyGraph();
+            var next = speaking && _talkClip != null ? 1f : 0f;
+            if (next > _talkGoal && _talkPlayable.IsValid())
+                _talkPlayable.SetTime(0);
+            _talkGoal = next;
+
+            var character = avatar.GetComponent<ConvaiCharacter>();
+            var context = avatar.GetComponent<EmbodimentContext>();
+            if (character == null || context == null || context.EventHub == null)
+                return;
+            if (string.IsNullOrWhiteSpace(character.CharacterId))
+                return;
+
+            context.EventHub.Publish(CharacterSpeechStateChanged.Create(character.CharacterId, speaking));
+            context.EventHub.Publish(speaking
+                ? CharacterAudioPlaybackStateChanged.Started(character.CharacterId)
+                : CharacterAudioPlaybackStateChanged.Stopped(character.CharacterId));
+        }
+
+        static void EnableEmbodiment(GameObject avatar, Camera cam)
+        {
+            if (avatar == null)
+                return;
+
+            KeepCharacterLocal(avatar);
+            EnsureBodyMotion(avatar);
+
+            var gaze = avatar.GetComponent<ConvaiGazeController>();
+            if (gaze == null)
+                gaze = avatar.AddComponent<ConvaiGazeController>();
+            gaze.enabled = true;
+            gaze.EyeContactMode = GazeEyeContactMode.AlwaysLock;
+            if (cam != null)
+                gaze.PlayerAnchorOverride = cam.transform;
+
+            var body = avatar.GetComponent<ConvaiBodyLanguageController>();
+            if (body == null)
+                body = avatar.AddComponent<ConvaiBodyLanguageController>();
+            body.enabled = true;
+
+            var emotion = avatar.GetComponent<ConvaiEmotionController>();
+            if (emotion == null)
+                emotion = avatar.AddComponent<ConvaiEmotionController>();
+            emotion.enabled = true;
+        }
+
+        static void ActivateChain(GameObject go)
+        {
+            var chain = new System.Collections.Generic.List<Transform>();
+            var t = go.transform;
+            while (t != null)
+            {
+                chain.Add(t);
+                t = t.parent;
+            }
+
+            for (var i = chain.Count - 1; i >= 0; i--)
+            {
+                if (!chain[i].gameObject.activeSelf)
+                    chain[i].gameObject.SetActive(true);
+            }
+        }
+
+        static GameObject FindNamedInScene(string objectName)
+        {
+            var all = Resources.FindObjectsOfTypeAll<Transform>();
+            for (var i = 0; i < all.Length; i++)
+            {
+                var t = all[i];
+                if (t == null || t.name != objectName || !t.gameObject.scene.IsValid())
+                    continue;
+                return t.gameObject;
+            }
+
+            return null;
+        }
+
+        static Camera FindSessionCamera()
+        {
+            var cams = FindObjectsByType<Camera>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            Camera fallback = null;
+            for (var i = 0; i < cams.Length; i++)
+            {
+                var cam = cams[i];
+                if (cam == null || cam.targetTexture != null)
+                    continue;
+                if (fallback == null)
+                    fallback = cam;
+                if (cam.CompareTag("MainCamera"))
+                    return cam;
+                var parentBehaviours = cam.GetComponentsInParent<MonoBehaviour>(true);
+                for (var b = 0; b < parentBehaviours.Length; b++)
+                {
+                    if (parentBehaviours[b] != null && parentBehaviours[b].GetType().Name == "ConvaiOrbitCamera")
+                        return cam;
+                }
+            }
+
+            return fallback != null ? fallback : Camera.main;
+        }
+
+        void SetSessionCharacterVisible(bool visible)
+        {
+            var avatar = FindNamedInScene("Convai Character");
+            if (avatar == null)
+                avatar = FindNamedInScene("personaje");
+
+            if (avatar != null && avatar.activeSelf != visible)
+                avatar.SetActive(visible);
         }
 
         IEnumerator LoadStudentList()
@@ -1141,12 +1975,10 @@ namespace Empathia
             if (_welcomeTitle != null)
                 _welcomeTitle.text = "¡Bienvenido, " + name + "!";
             if (_welcomeSub != null)
-                _welcomeSub.text = !string.IsNullOrEmpty(EmpathiaAuthState.AdultToken)
-                    ? "Adulto eligió estudiante → sesión B."
-                    : "Login + sesión + audio/texto a B.";
-            SetTranscript("(aún no hay)");
+                _welcomeSub.text = "Este es tu espacio de acompañamiento emocional.";
+            SetTranscript("(aún no hay mensaje)");
             SetReply("(sin respuesta)");
-            SetStatus("Listo. Graba o escribe un mensaje para B.");
+            SetStatus("Puedes hablar o escribir.");
             SetState("idle");
             ShowScreen(UiScreen.Health);
             StartCoroutine(EnsureSessionThenReady());
@@ -1168,16 +2000,18 @@ namespace Empathia
             if (ok)
             {
                 Debug.Log("[Empathia] Sesión B lista: " + EmpathiaAuthState.SessionId);
-                SetStatus("Sesión B lista. Graba o escribe texto a B.");
+                SetStatus("Listo. Puedes hablar o escribir.");
                 yield break;
             }
 
             Debug.LogWarning("[Empathia] Aún sin sesión B (se reintenta al enviar): " + msg);
-            SetStatus("Listo. Al enviar se crea sesión y POST /active/text.");
+            SetStatus("Puedes hablar o escribir.");
         }
 
         void ApplyLayout()
         {
+            if (_uiFromScene)
+                return;
             _lastScreen = new Vector2(Screen.width, Screen.height);
             if (_scaler == null) return;
 
@@ -1185,11 +2019,11 @@ namespace Empathia
             _scaler.matchWidthOrHeight = Mathf.Abs(aspect - (RefW / RefH)) < 0.08f ? 0.5f : (aspect >= 1.4f ? 0.5f : 0.7f);
 
             PlaceBackground();
-            PlaceLoginCard();
+            RefreshLoginCardLayout();
             if (_confirmRt != null)
                 _confirmRt.sizeDelta = new Vector2(520, 360);
-            if (_healthRt != null)
-                _healthRt.sizeDelta = new Vector2(780, 500);
+            if (_healthRt != null && _screen != UiScreen.Health)
+                _healthRt.sizeDelta = new Vector2(780, 620);
         }
 
         void PlaceBackground()
@@ -1202,27 +2036,114 @@ namespace Empathia
 
         void PlaceLoginCard()
         {
-            if (_cardRt != null)
-            {
-                _cardRt.anchorMin = new Vector2(0.5f, LoginCardBottom);
-                _cardRt.anchorMax = new Vector2(0.5f, LoginCardTop);
-                _cardRt.pivot = new Vector2(0.5f, 0.5f);
-                _cardRt.sizeDelta = new Vector2(LoginCardW, 0);
-                _cardRt.anchoredPosition = Vector2.zero;
-            }
+            RefreshLoginCardLayout();
+        }
 
-            if (_cardShadowGo == null)
+        void SetStudentScrollHeight(float height)
+        {
+            if (_studentLoginPanel == null)
                 return;
+            var scroll = _studentLoginPanel.GetComponentInChildren<ScrollRect>(true);
+            if (scroll == null)
+                return;
+            var le = scroll.GetComponent<LayoutElement>();
+            if (le == null)
+                return;
+            le.preferredHeight = height;
+            le.minHeight = height;
+        }
 
+        void QueueLoginCardFit()
+        {
+            if (!isActiveAndEnabled || !Application.isPlaying)
+                return;
+            if (_fitCardCo != null)
+                StopCoroutine(_fitCardCo);
+            _fitCardCo = StartCoroutine(FitLoginCardNextFrame());
+        }
+
+        IEnumerator FitLoginCardNextFrame()
+        {
+            yield return null;
+            RefreshLoginCardLayout();
+        }
+
+        float MaxVisibleLoginCardHeight()
+        {
+            var canvas = _cardRt != null ? _cardRt.GetComponentInParent<Canvas>() : null;
+            var canvasRt = canvas != null ? canvas.transform as RectTransform : null;
+            var canvasH = canvasRt != null ? canvasRt.rect.height : RefH;
+            const float margin = 40f;
+
+            if (_cardRt == null || canvasRt == null)
+                return Mathf.Min(LoginCardMaxH, canvasH * 0.52f);
+
+            var corners = new Vector3[4];
+            _cardRt.GetWorldCorners(corners);
+            Camera cam = null;
+            if (canvas.renderMode != RenderMode.ScreenSpaceOverlay)
+                cam = canvas.worldCamera;
+
+            Vector2 topLocal;
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    canvasRt,
+                    RectTransformUtility.WorldToScreenPoint(cam, corners[1]),
+                    cam,
+                    out topLocal))
+                return Mathf.Min(LoginCardMaxH, canvasH * 0.52f);
+
+            var canvasBottom = -canvasH * canvasRt.pivot.y;
+            return Mathf.Clamp(topLocal.y - canvasBottom - margin, 280f, LoginCardMaxH);
+        }
+
+        void FollowCardShadow()
+        {
+            if (_cardShadowGo == null || _cardRt == null)
+                return;
             var shadowRt = _cardShadowGo.GetComponent<RectTransform>();
             if (shadowRt == null)
                 return;
+            shadowRt.anchorMin = _cardRt.anchorMin;
+            shadowRt.anchorMax = _cardRt.anchorMax;
+            shadowRt.pivot = _cardRt.pivot;
+            shadowRt.sizeDelta = _cardRt.sizeDelta + new Vector2(18f, 18f);
+            shadowRt.anchoredPosition = _cardRt.anchoredPosition + new Vector2(0f, -8f);
+        }
 
-            shadowRt.anchorMin = new Vector2(0.5f, LoginCardBottom);
-            shadowRt.anchorMax = new Vector2(0.5f, LoginCardTop);
-            shadowRt.pivot = new Vector2(0.5f, 0.5f);
-            shadowRt.sizeDelta = new Vector2(LoginCardW + 16f, 0);
-            shadowRt.anchoredPosition = new Vector2(0, -6);
+        void RefreshLoginCardLayout()
+        {
+            if (_cardRt == null)
+                return;
+
+            if (_cardRt.GetComponent<RectMask2D>() == null)
+                _cardRt.gameObject.AddComponent<RectMask2D>();
+
+            var fitter = _cardRt.GetComponent<ContentSizeFitter>();
+            if (fitter != null)
+                fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            Canvas.ForceUpdateCanvases();
+            LayoutRebuilder.ForceRebuildLayoutImmediate(_cardRt);
+
+            var maxH = MaxVisibleLoginCardHeight();
+            var h = Mathf.Clamp(_cardRt.rect.height, 260f, maxH);
+
+            if (fitter != null)
+                fitter.verticalFit = ContentSizeFitter.FitMode.Unconstrained;
+
+            if (!_uiFromScene)
+            {
+                _cardRt.anchorMin = _cardRt.anchorMax = new Vector2(0.5f, LoginCardTop);
+                _cardRt.pivot = new Vector2(0.5f, 1f);
+                _cardRt.sizeDelta = new Vector2(LoginCardW, h);
+                _cardRt.anchoredPosition = Vector2.zero;
+            }
+            else
+            {
+                _cardRt.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, h);
+            }
+
+            FollowCardShadow();
         }
 
         Image CreateImage(Transform parent, string name, Color color)
@@ -1321,7 +2242,7 @@ namespace Empathia
             textGo.transform.SetParent(textArea.transform, false);
             var text = textGo.GetComponent<TextMeshProUGUI>();
             text.font = GetTmpFont();
-            text.fontSize = 20;
+            text.fontSize = 22;
             text.color = Navy;
             text.alignment = TextAlignmentOptions.MidlineLeft;
             text.textWrappingMode = TextWrappingModes.NoWrap;
@@ -1333,7 +2254,7 @@ namespace Empathia
             phGo.transform.SetParent(textArea.transform, false);
             var ph = phGo.GetComponent<TextMeshProUGUI>();
             ph.font = GetTmpFont();
-            ph.fontSize = 20;
+            ph.fontSize = 22;
             ph.fontStyle = FontStyles.Normal;
             ph.color = new Color(Muted.r, Muted.g, Muted.b, 0.85f);
             ph.text = placeholder;
@@ -1345,7 +2266,7 @@ namespace Empathia
             input.textComponent = text;
             input.placeholder = ph;
             input.fontAsset = GetTmpFont();
-            input.pointSize = 20;
+            input.pointSize = 22;
             input.text = value ?? "";
             input.caretColor = Purple;
             input.selectionColor = new Color(Purple.r, Purple.g, Purple.b, 0.25f);
@@ -1429,7 +2350,7 @@ namespace Empathia
             captionGo.transform.SetParent(fieldGo.transform, false);
             var caption = captionGo.GetComponent<TextMeshProUGUI>();
             caption.font = GetTmpFont();
-            caption.fontSize = 20;
+            caption.fontSize = 22;
             caption.color = Navy;
             caption.alignment = TextAlignmentOptions.MidlineLeft;
             caption.textWrappingMode = TextWrappingModes.NoWrap;
@@ -1580,15 +2501,7 @@ namespace Empathia
 
             var btn = go.GetComponent<Button>();
             btn.targetGraphic = img;
-            btn.onClick.AddListener(() =>
-            {
-                _showPass = !_showPass;
-                input.contentType = _showPass
-                    ? TMP_InputField.ContentType.Standard
-                    : TMP_InputField.ContentType.Password;
-                input.ForceLabelUpdate();
-                eyeImg.color = _showPass ? Purple : Muted;
-            });
+            btn.onClick.AddListener(TogglePassword);
             return btn;
         }
 
@@ -1759,12 +2672,10 @@ namespace Empathia
         void OnLogin()
         {
             if (_busy) return;
-            EmpathiaAuthState.BaseUrl = string.IsNullOrWhiteSpace(_baseUrl.text)
-                ? "http://127.0.0.1:8000/api/v1"
-                : _baseUrl.text.Trim();
+            ApplyServerFromUi();
 
             SetBusy(true);
-            SetLoginStatus("Autenticando contra B…");
+            SetLoginStatus("Autenticando…");
             StartCoroutine(_api.Login(_user.text.Trim(), _pass.text, (ok, msg) =>
             {
                 SetBusy(false);
@@ -1774,12 +2685,12 @@ namespace Empathia
                     if (EmpathiaAuthState.IsAdultStaff)
                     {
                         ShowStaffLogin(false);
-                        SetLoginStatus("Sesión lista. Elige un perfil o regístralo.");
+                        SetLoginStatus("Listo. Elige un perfil o regístralo.");
                     }
                     else
                     {
                         // Demo legado: estudiante1 con password
-                        SetLoginStatus("Login OK (demo estudiante). Confirma para continuar.");
+                        SetLoginStatus("Ingreso listo. Confirma para continuar.");
                         ShowScreen(UiScreen.Confirm);
                     }
                 }
@@ -1802,7 +2713,7 @@ namespace Empathia
             SetState("listening");
             SetTranscript("(habla ahora…)");
             SetReply("(sin respuesta)");
-            SetStatus("Grabando tu voz… Detener = transcribir en local");
+            SetStatus("Grabando… pulsa Detener cuando termines.");
 
             yield return Application.RequestUserAuthorization(UserAuthorization.Microphone);
             if (!Application.HasUserAuthorization(UserAuthorization.Microphone))
@@ -1819,11 +2730,11 @@ namespace Empathia
                 SetRecordButtonUi(false);
                 SetBusy(false);
                 SetState("idle");
-                SetStatus("Sin micrófono. Revisa Windows → Sonido → Entrada.");
+                SetStatus("Sin micrófono. Ábrelo en Configuración (engranaje) o en Windows → Sonido.");
                 yield break;
             }
 
-            _micDevice = Microphone.devices[0];
+            _micDevice = ResolveMicDevice();
             Debug.Log("[Empathia] Mic: " + _micDevice);
             _micClip = Microphone.Start(_micDevice, false, MaxMicSeconds, MicSampleRate);
             if (_micClip == null)
@@ -1906,8 +2817,8 @@ namespace Empathia
 
             SetBusy(true);
             SetState("processing");
-            SetStatus("Transcribiendo TU audio en local…");
-            SetTranscript("(convirtiendo tu voz a texto…)");
+            SetStatus("Pasando tu voz a texto…");
+            SetTranscript("(convirtiendo tu voz…)");
 
             var sttOk = false;
             string spoken = null;
@@ -1931,7 +2842,7 @@ namespace Empathia
 
             ApplySpokenText(spoken);
             Debug.Log("[Empathia] Texto de TU audio: " + spoken);
-            SetStatus("Texto listo. Enviando a B (/active/text)…");
+            SetStatus("Enviando tu mensaje…");
             yield return EnsureSessionAndPostText(spoken);
         }
 
@@ -1949,7 +2860,7 @@ namespace Empathia
 
             if (!EmpathiaAuthState.HasSession)
             {
-                SetStatus("Creando sesión en B…");
+                SetStatus("Creando la conversación…");
                 var sessionOk = false;
                 var sessionMsg = "";
                 yield return _api.CreateSession((ok, msg) =>
@@ -1968,7 +2879,7 @@ namespace Empathia
                 }
             }
 
-            SetStatus("POST .../sessions/active/text …");
+            SetStatus("Enviando tu mensaje…");
             var sendOk = false;
             var sendMsg = "";
             SessionTextResponse parsed = null;
@@ -1984,7 +2895,7 @@ namespace Empathia
                 SetBusy(false);
                 SetState("idle");
                 SetReply("(error)");
-                SetStatus("B no recibió el texto: " + sendMsg);
+                SetStatus("No se pudo enviar el mensaje: " + sendMsg);
                 Debug.LogWarning("[Empathia] Falló POST /active/text: " + sendMsg);
                 yield break;
             }
@@ -2015,11 +2926,11 @@ namespace Empathia
             {
                 SetBusy(false);
                 SetState("idle");
-                SetStatus("Texto enviado, pero sin session.id para leer /events.");
+                SetStatus("Mensaje enviado. Esperando respuesta…");
                 yield break;
             }
 
-            SetStatus("Esperando turn.result en /events…");
+            SetStatus("EmpathIA está pensando…");
             TurnResultInfo turn = null;
             var pollOk = false;
             var pollMsg = "";
@@ -2042,7 +2953,7 @@ namespace Empathia
                     : (immediateReply ?? "(sin reply_text)");
                 SetReply(reply);
                 Debug.Log("[Empathia] turn.result reply: " + reply);
-                SetStatus("Respuesta de B/C lista. Reproduciendo TTS…");
+                SetStatus("Reproduciendo la voz…");
                 yield return PlayTurnTts(turn);
             }
             else if (!string.IsNullOrWhiteSpace(immediateReply))
@@ -2050,7 +2961,7 @@ namespace Empathia
                 // B antiguo: solo reply en el POST, sin evento.
                 SetReply(immediateReply);
                 Debug.LogWarning("[Empathia] Sin turn.result (" + pollMsg + "). Uso reply del POST.");
-                SetStatus("Texto OK. Respuesta del POST (sin evento). " + pollMsg);
+                SetStatus("Llegó el texto, pero no el evento de voz.");
                 SetBusy(false);
                 SetState("idle");
                 yield break;
@@ -2089,17 +3000,18 @@ namespace Empathia
                 _audio = GetComponent<AudioSource>() ?? gameObject.AddComponent<AudioSource>();
 
             SetState("speaking");
+            ApplyReplyEmotion(turn.ReplyText);
             if (_mouth != null)
                 _mouth.StartSpeaking(turn.Expression, turn.ReplyText);
 
             if (string.IsNullOrWhiteSpace(ttsUrl))
             {
-                SetStatus("Sin URL de TTS en turn.result (texto OK).");
+                SetStatus("Hay texto, pero no llegó el audio.");
                 yield return SpeakMouthOnly(2.4f);
                 yield break;
             }
 
-            SetStatus("Descargando TTS…");
+            SetStatus("Descargando la voz…");
 
             var playOk = false;
             var playMsg = "";
@@ -2112,7 +3024,7 @@ namespace Empathia
             if (!playOk)
             {
                 Debug.LogWarning("[Empathia] TTS de B no sonó: " + playMsg);
-                SetStatus("B no tenía el WAV. Leyendo la respuesta en voz alta…");
+                SetStatus("Sin archivo de voz. Leyendo el texto en voz alta…");
                 var localOk = false;
                 var localMsg = "";
                 yield return EmpathiaLocalTts.Speak(turn.ReplyText, _audio, (ok, msg) =>
@@ -2131,19 +3043,24 @@ namespace Empathia
                 playMsg = localMsg;
             }
 
-            SetStatus("Speaking… " + playMsg);
+            SetStatus("Reproduciendo…");
+            if (_mouth != null && _audio != null && _audio.clip != null)
+                _mouth.SetSpeechWindow(_audio.clip);
+            NotifyBodySpeaking(true);
             var waited = 0f;
             while (_audio != null && _audio.isPlaying && waited < 60f)
             {
                 waited += Time.unscaledDeltaTime;
                 if (_mouth != null)
-                    _mouth.Tick(waited);
+                    _mouth.Tick(_audio.time);
                 yield return null;
             }
 
             if (_mouth != null)
                 _mouth.Stop();
-            SetStatus("Turno completo: texto + TTS.");
+            NotifyBodySpeaking(false);
+            ApplyReplyEmotion(null);
+            SetStatus("Listo.");
         }
 
         IEnumerator SpeakMouthOnly(float seconds)
@@ -2185,7 +3102,10 @@ namespace Empathia
             if (_regGrade != null) _regGrade.interactable = !busy;
             if (_regShift != null) _regShift.interactable = !busy;
             if (_checkBBtn != null) _checkBBtn.interactable = !busy;
+            if (_settingsSaveBtn != null) _settingsSaveBtn.interactable = !busy;
             if (_confirmBtn != null) _confirmBtn.interactable = !busy;
+            if (_logoutBtn != null) _logoutBtn.interactable = !busy;
+            if (_reportBackBtn != null) _reportBackBtn.interactable = !busy;
             // Durante grabación el botón debe seguir activo para el 2.º toque
             if (_recordBtn != null)
                 _recordBtn.interactable = _recording || !busy;
@@ -2195,8 +3115,6 @@ namespace Empathia
 
         void SetState(string s)
         {
-            if (_state != null)
-                _state.text = EmpathiaText.ForUi("Estado UI: " + s);
             if (_mouth != null && s != "speaking")
                 _mouth.Stop();
         }
@@ -2211,6 +3129,373 @@ namespace Empathia
         {
             if (_loginStatus != null)
                 _loginStatus.text = EmpathiaText.ForUi(s ?? "");
+        }
+
+        void SetSettingsStatus(string s)
+        {
+            if (_settingsStatus != null)
+                _settingsStatus.text = EmpathiaText.ForUi(s ?? "");
+        }
+
+        void ApplyServerFromUi()
+        {
+            EmpathiaAuthState.BaseUrl = _baseUrl != null && !string.IsNullOrWhiteSpace(_baseUrl.text)
+                ? _baseUrl.text.Trim()
+                : (string.IsNullOrWhiteSpace(EmpathiaAuthState.BaseUrl)
+                    ? "http://127.0.0.1:8000/api/v1"
+                    : EmpathiaAuthState.BaseUrl);
+        }
+
+        void ApplyMicFromUi()
+        {
+            if (_micDropdown == null || _micDropdown.options == null || _micDropdown.options.Count == 0)
+                return;
+            if (_micDropdown.value <= 0)
+            {
+                EmpathiaAuthState.MicDevice = "";
+                return;
+            }
+
+            EmpathiaAuthState.MicDevice = SelectedOption(_micDropdown);
+        }
+
+        static string ResolveMicDevice()
+        {
+            var devices = Microphone.devices;
+            if (devices == null || devices.Length == 0)
+                return null;
+
+            var preferred = EmpathiaAuthState.MicDevice;
+            if (!string.IsNullOrEmpty(preferred))
+            {
+                for (var i = 0; i < devices.Length; i++)
+                {
+                    if (devices[i] == preferred)
+                        return devices[i];
+                }
+            }
+
+            return devices[0];
+        }
+
+        void FillMicDropdown()
+        {
+            var names = new List<string> { "Micrófono predeterminado" };
+            var devices = Microphone.devices;
+            if (devices != null)
+            {
+                for (var i = 0; i < devices.Length; i++)
+                {
+                    if (!string.IsNullOrWhiteSpace(devices[i]))
+                        names.Add(devices[i]);
+                }
+            }
+
+            var prefer = "Micrófono predeterminado";
+            if (!string.IsNullOrWhiteSpace(EmpathiaAuthState.MicDevice)
+                && names.Contains(EmpathiaAuthState.MicDevice))
+                prefer = EmpathiaAuthState.MicDevice;
+            SetDropdownOptions(_micDropdown, names.ToArray(), prefer);
+        }
+
+        void BuildSettingsGear(Transform canvas)
+        {
+            var go = new GameObject("SettingsGear", typeof(RectTransform), typeof(Image), typeof(Button));
+            go.transform.SetParent(canvas, false);
+            var img = go.GetComponent<Image>();
+            img.color = Color.white;
+            ApplyRounded(img, RoundSprite(128, 48), 1.2f);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(1f, 1f);
+            rt.sizeDelta = new Vector2(56f, 56f);
+            rt.anchoredPosition = new Vector2(-28f, -24f);
+
+            var iconGo = new GameObject("Icon", typeof(RectTransform), typeof(Image));
+            iconGo.transform.SetParent(go.transform, false);
+            var icon = iconGo.GetComponent<Image>();
+            icon.sprite = BuildIconSprite("gear");
+            icon.color = Navy;
+            icon.preserveAspect = true;
+            icon.raycastTarget = false;
+            var iconRt = icon.rectTransform;
+            iconRt.anchorMin = iconRt.anchorMax = iconRt.pivot = new Vector2(0.5f, 0.5f);
+            iconRt.sizeDelta = new Vector2(28f, 28f);
+
+            _settingsGearBtn = go.GetComponent<Button>();
+            _settingsGearBtn.targetGraphic = img;
+            _settingsGearBtn.onClick.AddListener(ToggleSettings);
+        }
+
+        void BuildSettingsView(Transform canvas)
+        {
+            _settingsView = new GameObject("SettingsView", typeof(RectTransform));
+            _settingsView.transform.SetParent(canvas, false);
+            StretchFull(_settingsView.GetComponent<RectTransform>());
+
+            var dim = CreateImage(_settingsView.transform, "Dim", new Color(0.08f, 0.07f, 0.14f, 0.48f));
+            StretchFull(dim.rectTransform);
+            dim.raycastTarget = true;
+
+            var card = CreateImage(_settingsView.transform, "SettingsCard", Color.white);
+            ApplyRounded(card, RoundSprite(256, 48), 1.05f);
+            var cardRt = card.rectTransform;
+            cardRt.anchorMin = cardRt.anchorMax = cardRt.pivot = new Vector2(0.5f, 0.5f);
+            cardRt.sizeDelta = new Vector2(560f, 520f);
+
+            var content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup));
+            content.transform.SetParent(cardRt, false);
+            var contentRt = content.GetComponent<RectTransform>();
+            StretchFull(contentRt);
+            contentRt.offsetMin = new Vector2(36, 28);
+            contentRt.offsetMax = new Vector2(-36, -28);
+            var v = content.GetComponent<VerticalLayoutGroup>();
+            v.spacing = 12;
+            v.childAlignment = TextAnchor.UpperCenter;
+            v.childControlWidth = true;
+            v.childControlHeight = true;
+            v.childForceExpandWidth = true;
+            v.childForceExpandHeight = false;
+
+            AddLabel(content.transform, "Configuración", 26, FontStyles.Bold, Navy, 40, TextAlignmentOptions.Center);
+            AddLabel(content.transform, "Servidor y micrófono de este computador.", 14, FontStyles.Normal, Muted, 36, TextAlignmentOptions.Center);
+            _baseUrl = AddIconInput(content.transform, "Dirección del servidor", EmpathiaAuthState.BaseUrl, "lock", false);
+            _micDropdown = AddOptionDropdown(content.transform, "Micrófono", "Micrófono predeterminado");
+            _checkBBtn = AddOutlineButton(content.transform, "Probar conexión", 50, OnCheckConnectionB);
+            _settingsStatus = AddLabel(content.transform, "", 14, FontStyles.Normal, Muted, 28, TextAlignmentOptions.Center);
+            _settingsSaveBtn = AddGradientButton(content.transform, "Guardar", 56, OnSaveSettings, 20f);
+            _settingsCloseBtn = AddOutlineButton(content.transform, "Cerrar", 50, () => ShowSettings(false));
+            _settingsView.SetActive(false);
+        }
+
+        void ToggleSettings()
+        {
+            var open = _settingsView != null && _settingsView.activeSelf;
+            ShowSettings(!open);
+        }
+
+        void ShowSettings(bool show)
+        {
+            if (_settingsView == null)
+                return;
+            if (show)
+            {
+                if (_baseUrl != null)
+                    _baseUrl.text = EmpathiaAuthState.BaseUrl ?? "";
+                FillMicDropdown();
+                SetSettingsStatus("");
+                _settingsView.SetActive(true);
+                _settingsView.transform.SetAsLastSibling();
+                if (_settingsGearBtn != null)
+                    _settingsGearBtn.transform.SetAsLastSibling();
+                if (_alertModal != null && _alertModal.activeSelf)
+                    _alertModal.transform.SetAsLastSibling();
+            }
+            else
+            {
+                _settingsView.SetActive(false);
+            }
+        }
+
+        void OnSaveSettings()
+        {
+            ApplyServerFromUi();
+            ApplyMicFromUi();
+            EmpathiaAuthState.PersistSettings();
+            SetSettingsStatus("Guardado.");
+            ShowSettings(false);
+        }
+
+        void OnEndConversation()
+        {
+            if (_busy || _recording)
+                return;
+            StartCoroutine(EndConversationThenReport());
+        }
+
+        IEnumerator EndConversationThenReport()
+        {
+            SetBusy(true);
+            if (_mouth != null)
+                _mouth.Stop();
+            if (_audio != null)
+                _audio.Stop();
+            SetStatus("Cerrando la conversación…");
+
+            var sessionId = EmpathiaAuthState.SessionId;
+            if (string.IsNullOrEmpty(sessionId))
+                sessionId = EmpathiaAuthState.SavedSessionId;
+
+            if (!string.IsNullOrEmpty(sessionId))
+            {
+                yield return _api.CloseSessionById(sessionId, (ok, msg) =>
+                {
+                    if (!ok)
+                        Debug.LogWarning("[Empathia] Cerrar charla: " + msg);
+                });
+            }
+
+            SessionSummaryDto summary = null;
+            if (!string.IsNullOrEmpty(sessionId))
+            {
+                yield return _api.FetchSessionSummary(sessionId, (ok, msg, data) =>
+                {
+                    if (!ok)
+                        Debug.LogWarning("[Empathia] Resumen: " + msg);
+                    summary = data;
+                });
+            }
+
+            SetBusy(false);
+            FillReport(summary);
+            ShowScreen(UiScreen.Report);
+        }
+
+        void FillReport(SessionSummaryDto summary)
+        {
+            EnsureReportView();
+            var name = summary != null && !string.IsNullOrWhiteSpace(summary.student_name)
+                ? summary.student_name
+                : EmpathiaAuthState.StudentDisplayName;
+            if (_reportTitle != null)
+            {
+                _reportTitle.text = string.IsNullOrWhiteSpace(name)
+                    ? "Reporte de esta charla"
+                    : "Reporte de " + name;
+            }
+
+            if (_reportMeta != null)
+            {
+                if (summary == null)
+                {
+                    _reportMeta.text = "No hubo una charla guardada esta vez.";
+                }
+                else
+                {
+                    var risk = summary.risk_count > 0
+                        ? "Señales de alerta: " + summary.risk_count
+                        : "Sin señales de alerta.";
+                    _reportMeta.text = "Turnos: " + summary.turn_count
+                        + "  ·  " + FormatEmotions(summary.emotion_counts)
+                        + "\n" + risk;
+                }
+            }
+
+            if (_reportBody != null)
+            {
+                var raw = summary != null ? summary.conversation_summary : null;
+                _reportBody.text = string.IsNullOrWhiteSpace(raw)
+                    ? "Esta conversación no dejó un resumen. Si hablaron, revisa que B esté encendido."
+                    : FormatSummaryForUi(raw);
+            }
+
+            SetButtonLabel(
+                _reportBackBtn,
+                !string.IsNullOrEmpty(EmpathiaAuthState.AdultToken)
+                    ? "Volver a la lista"
+                    : "Volver al inicio");
+        }
+
+        static string FormatEmotions(EmotionCountDto[] counts)
+        {
+            if (counts == null || counts.Length == 0)
+                return "Sin etiquetas de emoción.";
+
+            var parts = new List<string>();
+            for (var i = 0; i < counts.Length; i++)
+            {
+                if (counts[i] == null || string.IsNullOrWhiteSpace(counts[i].label))
+                    continue;
+                parts.Add(EmotionLabelEs(counts[i].label) + " (" + counts[i].count + ")");
+            }
+
+            return parts.Count == 0
+                ? "Sin etiquetas de emoción."
+                : "Emociones: " + string.Join(", ", parts.ToArray());
+        }
+
+        static string EmotionLabelEs(string label)
+        {
+            switch ((label ?? "").Trim().ToLowerInvariant())
+            {
+                case "sadness":
+                case "sad":
+                    return "tristeza";
+                case "happiness":
+                case "joy":
+                case "happy":
+                    return "alegría";
+                case "anger":
+                case "angry":
+                    return "enojo";
+                case "fear":
+                    return "miedo";
+                case "surprise":
+                    return "sorpresa";
+                case "disgust":
+                    return "disgusto";
+                case "neutral":
+                    return "calma";
+                default:
+                    return label;
+            }
+        }
+
+        static string FormatSummaryForUi(string raw)
+        {
+            var lines = raw.Replace("\r\n", "\n").Split('\n');
+            var blocks = new List<string>();
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var line = lines[i].Trim();
+                if (line.Length == 0)
+                    continue;
+                var pretty = line
+                    .Replace(" | ", "\n")
+                    .Replace("Usuario:", "Estudiante:")
+                    .Replace("IA:", "EmpathIA:");
+                var open = pretty.IndexOf('[');
+                var close = pretty.IndexOf(']');
+                if (open >= 0 && close > open)
+                {
+                    var label = pretty.Substring(open + 1, close - open - 1);
+                    pretty = pretty.Substring(0, open)
+                        + "· "
+                        + EmotionLabelEs(label)
+                        + pretty.Substring(close + 1);
+                }
+                blocks.Add(pretty.Trim());
+            }
+
+            return blocks.Count == 0 ? raw : string.Join("\n\n", blocks.ToArray());
+        }
+
+        void OnReportBack()
+        {
+            if (_busy)
+                return;
+
+            if (EmpathiaAuthState.TryRestoreAdult())
+            {
+                ShowSettings(false);
+                ShowScreen(UiScreen.Login);
+                ShowStaffLogin(false);
+                SetLoginStatus("Elige el siguiente estudiante.");
+                return;
+            }
+
+            OnLogout();
+        }
+
+        void OnLogout()
+        {
+            if (_busy || _recording)
+                return;
+            EmpathiaAuthState.ClearAll();
+            ShowSettings(false);
+            ShowStaffLogin(true);
+            SetLoginStatus("Inicia sesión del psicoorientador.");
+            ShowScreen(UiScreen.Login);
         }
 
         void BuildAlertModal(Transform canvas)
@@ -2294,13 +3579,13 @@ namespace Empathia
         void SetReply(string s)
         {
             if (_reply != null)
-                _reply.text = EmpathiaText.ForUi("Respuesta EmpathIA: " + s);
+                _reply.text = EmpathiaText.ForUi(s);
         }
 
         void SetTranscript(string s)
         {
             if (_transcript != null)
-                _transcript.text = EmpathiaText.ForUi("Tu texto: " + s);
+                _transcript.text = EmpathiaText.ForUi(s);
         }
     }
 }

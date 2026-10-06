@@ -7,6 +7,7 @@ Implements internal InferTurn + health + memory stubs.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
@@ -67,6 +68,13 @@ PIPER_VOICES_DIR = Path(os.environ.get("PIPER_VOICES_DIR", str(Path(__file__).re
 PIPER_LENGTH_SCALE = float(os.environ.get("PIPER_LENGTH_SCALE", "1.05"))
 PIPER_NOISE_SCALE = float(os.environ.get("PIPER_NOISE_SCALE", "0.667"))
 PIPER_NOISE_W = float(os.environ.get("PIPER_NOISE_W", "0.8"))
+EDGE_TTS_ENABLED = os.environ.get("EDGE_TTS_ENABLED", "true").lower() in {"1", "true", "yes"}
+EDGE_TTS_VOICE = os.environ.get("EDGE_TTS_VOICE", "es-CO-SalomeNeural")
+if sys.platform.startswith("win"):
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
 _WHISPER_MODEL = None
 _WHISPER_MODEL_CONFIG = None
 _PIPER_VOICE = None
@@ -682,21 +690,24 @@ def _get_piper_voice():
 
 
 def synthesize_speech(text: str, out_path: Path) -> tuple[str, int]:
-    """Renders `text` to `out_path` with Piper. Falls back to silence on failure."""
+    """Renders `text` to `out_path`. Salomé (edge-tts) first, then Piper, then silence."""
     started = time.perf_counter()
-    if PIPER_TTS_ENABLED and text.strip():
+    spoken = (text or "").strip()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if EDGE_TTS_ENABLED and spoken:
         try:
-            voice = _get_piper_voice()
-            with wave.open(str(out_path), "wb") as wav_file:
-                voice.synthesize_wav(
-                    text,
-                    wav_file,
-                    length_scale=PIPER_LENGTH_SCALE,
-                    noise_scale=PIPER_NOISE_SCALE,
-                    noise_w=PIPER_NOISE_W,
-                )
-            elapsed_ms = max(1, int((time.perf_counter() - started) * 1000))
-            return f"piper:{PIPER_VOICE_NAME}", elapsed_ms
+            if _tts_with_edge(spoken, out_path):
+                elapsed_ms = max(1, int((time.perf_counter() - started) * 1000))
+                return f"edge:{EDGE_TTS_VOICE}", elapsed_ms
+        except Exception as exc:
+            print(f"[C] edge TTS fallback: {exc}", flush=True)
+
+    if PIPER_TTS_ENABLED and spoken:
+        try:
+            if _tts_with_piper(spoken, out_path):
+                elapsed_ms = max(1, int((time.perf_counter() - started) * 1000))
+                return f"piper:{PIPER_VOICE_NAME}", elapsed_ms
         except Exception as exc:
             print(f"[C] piper TTS fallback: {exc}", flush=True)
 
@@ -706,6 +717,80 @@ def synthesize_speech(text: str, out_path: Path) -> tuple[str, int]:
         out_path.write_bytes(_minimal_wav())
     elapsed_ms = max(1, int((time.perf_counter() - started) * 1000))
     return "stub-silence", elapsed_ms
+
+
+def _tts_with_piper(text: str, out_path: Path) -> bool:
+    from piper.config import SynthesisConfig
+
+    voice = _get_piper_voice()
+    syn_config = SynthesisConfig(
+        length_scale=PIPER_LENGTH_SCALE,
+        noise_scale=PIPER_NOISE_SCALE,
+        noise_w_scale=PIPER_NOISE_W,
+    )
+    with wave.open(str(out_path), "wb") as wav_file:
+        voice.synthesize_wav(text, wav_file, syn_config=syn_config)
+    return out_path.exists() and out_path.stat().st_size > 44
+
+
+def _tts_with_edge(text: str, out_path: Path) -> bool:
+    try:
+        import edge_tts
+    except ImportError:
+        print("[C] Falta paquete edge-tts. Ejecuta: python -m pip install edge-tts imageio-ffmpeg", flush=True)
+        return False
+
+    mp3_path = out_path.with_suffix(".mp3")
+
+    async def _save() -> None:
+        communicate = edge_tts.Communicate(text, EDGE_TTS_VOICE)
+        await communicate.save(str(mp3_path))
+
+    asyncio.run(_save())
+    if not mp3_path.exists() or mp3_path.stat().st_size < 64:
+        return False
+    _mp3_to_wav(mp3_path, out_path)
+    try:
+        mp3_path.unlink()
+    except OSError:
+        pass
+    return out_path.exists() and out_path.stat().st_size > 44
+
+
+def _ffmpeg_exe() -> str | None:
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
+
+def _mp3_to_wav(mp3_path: Path, wav_path: Path) -> None:
+    ffmpeg = _ffmpeg_exe()
+    if not ffmpeg:
+        raise RuntimeError("FFMPEG_NOT_FOUND")
+    completed = subprocess.run(
+        [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(mp3_path),
+            "-acodec",
+            "pcm_s16le",
+            "-ac",
+            "1",
+            str(wav_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        err = (completed.stderr or completed.stdout or "").strip()[-400:]
+        raise RuntimeError(f"FFMPEG_MP3_TO_WAV: {err}")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -742,7 +827,7 @@ class Handler(BaseHTTPRequestHandler):
                     "components": {
                         "whisper": "stub",
                         "ollama": "stub",
-                        "tts": "stub",
+                        "tts": "edge+piper",
                         "memory": "session-file",
                     },
                 },
